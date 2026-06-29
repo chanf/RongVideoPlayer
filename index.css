@@ -376,6 +376,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  max-height: 350px;
+  overflow-y: auto;
 }
 
 .tree-placeholder {
@@ -1886,7 +1888,7 @@ body[data-theme="ningzhi"] .modal-card {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--text-normal);
+  color: var(--text-main);
 }
 
 .btn-remove-favorite {
