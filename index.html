@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rong VideoPlayer</title>
+  <link rel="stylesheet" href="index.css">
+  <!-- Load Outfit font from Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Custom titlebar for macOS window drag -->
+  <div class="mac-titlebar">
+    <span class="app-title">Rong VideoPlayer</span>
+  </div>
+
+  <div class="app-container">
+    <!-- Left Sidebar: Directory Tree & Search -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <button id="btn-open-folder" class="btn-primary">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+          </svg>
+          打开媒体文件夹
+        </button>
+        <div class="search-container">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input type="text" id="search-input" placeholder="搜索视频文件...">
+        </div>
+      </div>
+      
+      <div class="sidebar-content">
+        <div class="section-title">媒体目录树</div>
+        <div id="directory-tree" class="tree-container">
+          <div class="tree-placeholder">
+            <svg class="placeholder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+            </svg>
+            <p>尚未选择文件夹</p>
+            <span>点击上方按钮导入包含视频的文件夹</span>
+          </div>
+        </div>
+
+        <div class="section-title history-title">
+          <span>最近播放</span>
+          <button id="btn-clear-history" class="btn-clear" title="清空播放记录">清空</button>
+        </div>
+        <div id="recent-list" class="recent-container">
+          <!-- Recent files dynamically generated -->
+        </div>
+      </div>
+    </aside>
+
+    <!-- Right Media Player Container -->
+    <main class="player-container" id="player-container">
+      <!-- The Video Element -->
+      <video id="video-element" preload="auto"></video>
+
+      <!-- Welcome Overlay / No Video Loaded Screen -->
+      <div class="welcome-overlay" id="welcome-overlay">
+        <div class="welcome-content">
+          <div class="glow-logo">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+          </div>
+          <h1>Rong VideoPlayer</h1>
+          <p>支持播放 MP4, MKV, RMVB 等多种主流格式</p>
+          <div class="shortcuts-guide">
+            <div class="shortcut-item"><span class="key">Space</span> 播放 / 暂停</div>
+            <div class="shortcut-item"><span class="key">←</span> <span class="key">→</span> 快退 / 快进 15秒</div>
+            <div class="shortcut-item"><span class="key">↑</span> <span class="key">↓</span> 调节音量</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Spinner Overlay (Loading & Transcoding) -->
+      <div class="loading-overlay" id="loading-overlay">
+        <div class="spinner-container">
+          <div class="spinner"></div>
+          <span id="loading-text">正在加载视频...</span>
+        </div>
+      </div>
+
+      <!-- Custom Video Controls Overlay -->
+      <div class="controls-overlay" id="controls-overlay">
+        <!-- Top controls bar (displays file name) -->
+        <div class="controls-top">
+          <h2 id="video-title" class="video-title">视频文件名.mp4</h2>
+        </div>
+
+        <!-- Bottom controls container -->
+        <div class="controls-bottom">
+          <!-- Timeline progress bar -->
+          <div class="timeline-container">
+            <input type="range" id="timeline-slider" class="timeline-slider" min="0" max="100" value="0" step="0.1">
+            <div class="timeline-progress" id="timeline-progress"></div>
+            <div class="timeline-buffered" id="timeline-buffered"></div>
+          </div>
+
+          <!-- Bottom Control Buttons Bar -->
+          <div class="buttons-bar">
+            <!-- Left Group Controls -->
+            <div class="control-group left-group">
+              <!-- Play / Pause -->
+              <button id="btn-play-pause" class="control-btn" title="播放/暂停 (空格)">
+                <svg id="icon-play" class="control-icon" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                <svg id="icon-pause" class="control-icon hidden" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="6" y="4" width="4" height="16"></rect>
+                  <rect x="14" y="4" width="4" height="16"></rect>
+                </svg>
+              </button>
+
+              <!-- Backward 15s -->
+              <button id="btn-rewind" class="control-btn" title="快退 15秒 (左方向键)">
+                <svg class="control-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M11 17l-5-5 5-5M18 17l-5-5 5-5"></path>
+                </svg>
+              </button>
+
+              <!-- Forward 15s -->
+              <button id="btn-forward" class="control-btn" title="快进 15秒 (右方向键)">
+                <svg class="control-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M13 17l5-5-5-5M6 17l5-5-5-5"></path>
+                </svg>
+              </button>
+
+              <!-- Time display -->
+              <span class="time-display">
+                <span id="current-time">00:00</span>
+                <span class="time-separator">/</span>
+                <span id="total-duration">00:00</span>
+              </span>
+
+              <!-- Transcode Tag (Optional display) -->
+              <span id="transcode-tag" class="transcode-tag hidden">实时转码中</span>
+            </div>
+
+            <!-- Right Group Controls -->
+            <div class="control-group right-group">
+              <!-- Volume Group -->
+              <div class="volume-container">
+                <button id="btn-mute" class="control-btn" title="静音">
+                  <svg id="icon-volume-high" class="control-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                  </svg>
+                  <svg id="icon-volume-muted" class="control-icon hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                    <line x1="23" y1="9" x2="17" y2="15"></line>
+                    <line x1="17" y1="9" x2="23" y2="15"></line>
+                  </svg>
+                </button>
+                <input type="range" id="volume-slider" class="volume-slider" min="0" max="100" value="100">
+              </div>
+
+              <!-- Playback Speed -->
+              <div class="speed-select-container">
+                <button id="btn-speed" class="control-btn speed-btn">1.0x</button>
+                <div class="speed-dropdown" id="speed-dropdown">
+                  <div class="speed-option" data-speed="0.5">0.5x</div>
+                  <div class="speed-option" data-speed="0.75">0.75x</div>
+                  <div class="speed-option active" data-speed="1.0">1.0x</div>
+                  <div class="speed-option" data-speed="1.25">1.25x</div>
+                  <div class="speed-option" data-speed="1.5">1.5x</div>
+                  <div class="speed-option" data-speed="2.0">2.0x</div>
+                </div>
+              </div>
+
+              <!-- Fullscreen -->
+              <button id="btn-fullscreen" class="control-btn" title="全屏 (F)">
+                <svg id="icon-fullscreen-enter" class="control-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+                </svg>
+                <svg id="icon-fullscreen-exit" class="control-icon hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M4 14h6v6m10-6h-6v6M4 10h6V4m10 6h-6V4"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+{
+  "name": "video-player",
+  "version": "1.0.0",
+  "description": "A beautiful desktop video player with folder directory tree support, built with Electron and FFmpeg.",
+  "author": "Rong Player Team",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^33.0.2",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.rong.videoplayer",
+    "productName": "Rong VideoPlayer",
+    "mac": {
+      "category": "public.app-category.video",
+      "target": [
+        "dmg"
+      ]
+    },
+    "directories": {
+      "output": "dist"
+    }
+  }
+}
