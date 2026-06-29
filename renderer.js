@@ -23,6 +23,7 @@ const searchInput = document.getElementById('search-input');
 const directoryTree = document.getElementById('directory-tree');
 const recentListContainer = document.getElementById('recent-list');
 const btnClearHistory = document.getElementById('btn-clear-history');
+const btnClearCompleted = document.getElementById('btn-clear-completed');
 
 const videoElement = document.getElementById('video-element');
 const playerContainer = document.getElementById('player-container');
@@ -86,6 +87,9 @@ function setupEventListeners() {
   });
 
   btnClearHistory.addEventListener('click', clearPlaybackHistory);
+  if (btnClearCompleted) {
+    btnClearCompleted.addEventListener('click', clearCompletedHistory);
+  }
 
   const btnRefreshTree = document.getElementById('btn-refresh-tree');
   if (btnRefreshTree) {
@@ -389,6 +393,27 @@ async function clearPlaybackHistory() {
       lastProgress: 0,
       recentList: []
     });
+  }
+}
+
+async function clearCompletedHistory() {
+  const completedItems = recentList.filter(item => item.progress >= 95);
+  if (completedItems.length === 0) {
+    alert('当前没有已播放完成的视频记录！');
+    return;
+  }
+
+  if (confirm(`是否确定清空这 ${completedItems.length} 条已播放完成的记录？`)) {
+    recentList = recentList.filter(item => item.progress < 95);
+    renderRecentList();
+
+    await ipcRenderer.invoke('save-history', {
+      recentList: recentList
+    });
+
+    if (currentDirectoryTree) {
+      renderDirectoryTree(currentDirectoryTree);
+    }
   }
 }
 
