@@ -198,6 +198,21 @@ function setupEventListeners() {
     btnFavorite.addEventListener('click', toggleFavoriteCurrentVideo);
   }
 
+  // Favorites Collapsible Header Toggle
+  const favoritesHeader = document.getElementById('favorites-header');
+  const favoritesListEl = document.getElementById('favorites-list');
+  const arrowFavorites = document.getElementById('arrow-favorites');
+  if (favoritesHeader && favoritesListEl && arrowFavorites) {
+    favoritesHeader.addEventListener('click', () => {
+      const isCollapsed = favoritesListEl.classList.toggle('collapsed');
+      if (isCollapsed) {
+        arrowFavorites.classList.remove('expanded');
+      } else {
+        arrowFavorites.classList.add('expanded');
+      }
+    });
+  }
+
   // Fullscreen
   btnFullscreen.addEventListener('click', toggleFullscreen);
 

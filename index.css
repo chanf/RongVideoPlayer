@@ -1910,3 +1910,7 @@ body[data-theme="ningzhi"] .modal-card {
   color: #ef4444;
   background-color: rgba(239, 68, 68, 0.1);
 }
+
+.favorites-container.collapsed {
+  display: none !important;
+}

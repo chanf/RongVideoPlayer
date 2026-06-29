@@ -76,7 +76,10 @@
           </div>
         </div>
 
-        <div class="section-title favorites-title" style="margin-top: 16px;">
+        <div class="section-title favorites-title" id="favorites-header" style="margin-top: 16px; cursor: pointer; display: flex; align-items: center; gap: 6px; user-select: none;">
+          <svg id="arrow-favorites" class="tree-arrow expanded" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width: 12px; height: 12px; transition: transform 0.2s ease;">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
           <span>我的收藏</span>
         </div>
         <div id="favorites-list" class="favorites-container">
