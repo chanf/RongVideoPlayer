@@ -9,9 +9,35 @@ let videoServer;
 const SERVER_PORT = 30032;
 const HISTORY_FILE = path.join(app.getPath('userData'), 'playback-history.json');
 
-// Paths to ffmpeg and ffprobe
-const FFMPEG_PATH = '/opt/homebrew/bin/ffmpeg';
-const FFPROBE_PATH = '/opt/homebrew/bin/ffprobe';
+// Paths to ffmpeg and ffprobe (dynamically resolved to prevent issues on other machines)
+function resolveBinaryPath(name) {
+  try {
+    const whichCmd = process.platform === 'win32' ? 'where' : 'which';
+    const pathStr = require('child_process').execSync(`${whichCmd} ${name}`, { stdio: [] }).toString().trim();
+    if (pathStr && fs.existsSync(pathStr)) {
+      return pathStr;
+    }
+  } catch (e) {}
+
+  const commonPaths = [
+    `/usr/local/bin/${name}`,
+    `/opt/homebrew/bin/${name}`,
+    `/usr/bin/${name}`,
+    path.join(__dirname, 'bin', name),
+    path.join(__dirname, '..', 'bin', name)
+  ];
+
+  for (const p of commonPaths) {
+    if (fs.existsSync(p)) {
+      return p;
+    }
+  }
+
+  return name;
+}
+
+const FFMPEG_PATH = resolveBinaryPath('ffmpeg');
+const FFPROBE_PATH = resolveBinaryPath('ffprobe');
 
 // Supported extensions by Chromium natively
 const NATIVE_EXTENSIONS = ['.mp4', '.webm', '.ogg', '.mov', '.m4v'];

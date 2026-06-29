@@ -864,6 +864,12 @@ async function playVideo(filePath, startSec = 0, autoplay = true) {
 // Video Callbacks
 function onVideoLoadedMetadata() {
   hideLoading();
+
+  // 兜底逻辑：如果后端 ffprobe 获取时长失败返回 0，使用 HTML5 video 自身的时长
+  if ((!currentFileDuration || isNaN(currentFileDuration) || currentFileDuration === 0) && videoElement.duration) {
+    currentFileDuration = videoElement.duration;
+    totalDurationLabel.textContent = formatTime(currentFileDuration);
+  }
   
   if (!isTranscoding && transcodeStartTime > 0) {
     videoElement.currentTime = transcodeStartTime;
