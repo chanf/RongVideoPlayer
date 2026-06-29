@@ -70,6 +70,30 @@ function setupEventListeners() {
   searchInput.addEventListener('input', handleSearch);
   btnClearHistory.addEventListener('click', clearPlaybackHistory);
 
+  const btnRefreshTree = document.getElementById('btn-refresh-tree');
+  if (btnRefreshTree) {
+    btnRefreshTree.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (currentDirectory) {
+        // Rotate refresh icon briefly for visual feedback
+        const svg = btnRefreshTree.querySelector('svg');
+        if (svg) {
+          svg.style.transition = 'transform 0.5s ease';
+          svg.style.transform = 'rotate(360deg)';
+          setTimeout(() => {
+            svg.style.transition = 'none';
+            svg.style.transform = 'none';
+          }, 500);
+        }
+        
+        const tree = await ipcRenderer.invoke('get-directory-tree', currentDirectory);
+        if (tree) {
+          renderDirectoryTree(tree);
+        }
+      }
+    });
+  }
+
   // Video Events
   videoElement.addEventListener('play', onVideoPlay);
   videoElement.addEventListener('pause', onVideoPause);

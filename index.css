@@ -314,6 +314,29 @@ body {
   letter-spacing: 1px;
   color: var(--text-muted);
   margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.btn-refresh-tree-action {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.btn-refresh-tree-action:hover {
+  background-color: var(--bg-hover);
+  color: var(--accent-color);
 }
 
 .history-title {
