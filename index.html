@@ -20,12 +20,34 @@
     <!-- Left Sidebar: Directory Tree & Search -->
     <aside class="sidebar">
       <div class="sidebar-header">
-        <button id="btn-open-folder" class="btn-primary">
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-          </svg>
-          打开媒体文件夹
-        </button>
+        <!-- Bilibili Profile Bar -->
+        <div class="bili-profile-bar" id="bili-profile-bar">
+          <div class="bili-avatar" id="bili-avatar">
+            <svg class="avatar-placeholder" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"></path>
+            </svg>
+          </div>
+          <div class="bili-info">
+            <span class="bili-name" id="bili-name">未登录 B 站</span>
+            <span class="bili-status" id="bili-status">无法下载高清视频</span>
+          </div>
+          <button id="btn-bili-login" class="bili-login-btn">登录</button>
+          <button id="btn-bili-logout" class="bili-logout-btn hidden">退出</button>
+        </div>
+
+        <div class="sidebar-actions">
+          <button id="btn-open-folder" class="btn-primary" style="flex: 1;">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+            </svg>
+            打开媒体文件夹
+          </button>
+          <button id="btn-toggle-downloader" class="btn-secondary-action" title="切换下载面板">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
+            </svg>
+          </button>
+        </div>
         <div class="search-container">
           <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="8"></circle>
@@ -224,6 +246,144 @@
         </div>
       </div>
     </main>
+
+    <!-- Downloader Workbench View -->
+    <main class="downloader-view hidden" id="downloader-view">
+      <div class="downloader-header">
+        <h2>Bilibili 视频下载器</h2>
+        <button id="btn-back-to-player" class="btn-primary-text">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px; margin-right: 4px;">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+          返回播放器
+        </button>
+      </div>
+
+      <div class="downloader-content">
+        <!-- Input url bar -->
+        <div class="downloader-input-section">
+          <input type="text" id="bili-url-input" placeholder="支持粘贴 Bilibili 视频链接、分P视频或合集系列链接...">
+          <button id="btn-parse-bili" class="btn-primary">
+            解析链接
+          </button>
+        </div>
+
+        <div class="downloader-workbench">
+          <!-- Left settings panel -->
+          <div class="downloader-settings">
+            <div class="settings-group">
+              <label>保存位置</label>
+              <div class="save-path-display">
+                <span id="lbl-save-path">自动适配</span>
+                <p id="lbl-save-path-detail" class="save-path-detail">有打开目录则保存至当前目录，否则保存至系统下载目录</p>
+              </div>
+            </div>
+
+            <div class="settings-group">
+              <label for="bili-quality-select">优先画质</label>
+              <select id="bili-quality-select" class="dropdown-select">
+                <option value="120">4K 超高清 (大会员)</option>
+                <option value="116">1080P 60帧 (大会员)</option>
+                <option value="112">1080P+ 高码率 (大会员)</option>
+                <option value="80" selected>1080P 高清 (登录后)</option>
+                <option value="64">720P 高清</option>
+                <option value="32">480P 清晰</option>
+              </select>
+            </div>
+            
+            <div class="settings-group">
+              <label>技术提示</label>
+              <div class="settings-tips">
+                <p>• 自动智能质量降级，若无高分辨率权限会自动降级下载最高可用分辨率。</p>
+                <p>• 音视频流独立高速下载后自动调用本地 FFmpeg 封装混流，极速无损生成 MP4。</p>
+                <p>• macOS 专享：自动注入 HVC1 (HEVC) 标志，确保 QuickTime 与 Finder 直接预览播放。</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right playlist and progress panel -->
+          <div class="downloader-main-panel">
+            <!-- Playlist section (initially empty) -->
+            <div class="parsed-results-section hidden" id="parsed-results-section">
+              <div class="results-header">
+                <h3 id="lbl-collection-title">解析合集名称</h3>
+                <div class="selection-actions">
+                  <button id="btn-select-all" class="btn-link">全选</button>
+                  <button id="btn-deselect-all" class="btn-link">取消全选</button>
+                </div>
+              </div>
+              <div class="episodes-table-container">
+                <table class="episodes-table">
+                  <thead>
+                    <tr>
+                      <th width="40"><input type="checkbox" id="chk-head-select" checked></th>
+                      <th width="60">分集</th>
+                      <th>标题</th>
+                      <th width="100" style="text-align: right;">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="episodes-tbody">
+                    <!-- Episodes list dynamically generated -->
+                  </tbody>
+                </table>
+              </div>
+              <div class="action-footer">
+                <span id="lbl-selected-count">已选中 0 项</span>
+                <button id="btn-start-download" class="btn-primary">开始下载</button>
+              </div>
+            </div>
+
+            <!-- Queue section (always visible if tasks present) -->
+            <div class="queue-section">
+              <div class="queue-header">
+                <h3>下载任务队列</h3>
+                <div class="queue-actions">
+                  <button id="btn-clear-completed-tasks" class="btn-link">清空已完成</button>
+                </div>
+              </div>
+              <div class="tasks-container" id="tasks-container">
+                <div class="queue-empty-placeholder" id="queue-empty-placeholder">
+                  暂无下载任务，在上方粘贴链接并解析以开始下载
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Bilibili Login Modal -->
+  <div class="modal-overlay hidden" id="bili-login-modal">
+    <div class="modal-card">
+      <button class="modal-close" id="btn-close-login-modal" title="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      <div class="modal-body">
+        <div class="bili-tv-icon">
+          <svg viewBox="0 0 24 24" fill="currentColor" style="color: #fb7299; width: 48px; height: 48px;">
+            <path d="M20 7H14.83L17.41 4.41L16 3L12 7L8 3L6.59 4.41L9.17 7H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V9c0-1.1-.9-2-2-2zm0 12H4V9h16v10zm-11-8h2v3H9zm6 0h2v3h-2z"></path>
+          </svg>
+        </div>
+        <h3>扫码登录 Bilibili</h3>
+        <p class="modal-subtitle">登录解锁大会员/1080P/4K 高画质下载</p>
+        
+        <div class="qrcode-wrapper">
+          <div id="bili-qrcode" class="qrcode-container">
+            <!-- 二维码图像容器 -->
+          </div>
+          <div class="qrcode-status-overlay hidden" id="qrcode-overlay">
+            <span id="qrcode-status-text">二维码已过期</span>
+            <button id="btn-refresh-qrcode" class="btn-refresh-text">点击刷新</button>
+          </div>
+        </div>
+        
+        <p class="scan-tip">请使用 <span style="color: #fb7299; font-weight: 600;">哔哩哔哩手机APP</span> 扫描二维码安全登录</p>
+      </div>
+    </div>
   </div>
 
   <script src="renderer.js"></script>

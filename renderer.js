@@ -60,6 +60,7 @@ const themeDropdown = document.getElementById('theme-dropdown');
 window.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
   await loadHistoryAndResume();
+  initBilibiliDownloader();
 });
 
 // Event Listeners Setup
@@ -167,6 +168,7 @@ async function loadHistoryAndResume() {
     if (tree) {
       renderDirectoryTree(tree);
     }
+    if (typeof updateSavePathLabel === 'function') updateSavePathLabel();
   }
 
   if (history.recentList) {
@@ -346,6 +348,7 @@ async function selectDirectory() {
   if (result) {
     currentDirectory = result.folderPath;
     renderDirectoryTree(result.tree);
+    if (typeof updateSavePathLabel === 'function') updateSavePathLabel();
     
     // Save directory path to history
     ipcRenderer.invoke('save-history', { lastDirectory: currentDirectory });
@@ -966,6 +969,472 @@ function showLoading(text) {
   loadingOverlay.classList.add('visible');
 }
 
+// Global hook to hide loading
+window.hideGlobalLoading = () => {
+  hideLoading();
+};
+
 function hideLoading() {
   loadingOverlay.classList.remove('visible');
+}
+
+// ========================================================
+// Bilibili 登录与下载器前端逻辑 (Bilibili Frontend Logic)
+// ========================================================
+
+let biliLoginPollInterval = null;
+let biliQrcodeKey = null;
+let parsedEpisodesList = [];
+let selectedEpisodesSet = new Set();
+
+function initBilibiliDownloader() {
+  const btnToggleDownloader = document.getElementById('btn-toggle-downloader');
+  const btnBackToPlayer = document.getElementById('btn-back-to-player');
+  const downloaderView = document.getElementById('downloader-view');
+  
+  const btnBiliLogin = document.getElementById('btn-bili-login');
+  const btnBiliLogout = document.getElementById('btn-bili-logout');
+  const biliLoginModal = document.getElementById('bili-login-modal');
+  const btnCloseLoginModal = document.getElementById('btn-close-login-modal');
+  const btnRefreshQrcode = document.getElementById('btn-refresh-qrcode');
+  
+  const btnParseBili = document.getElementById('btn-parse-bili');
+  const biliUrlInput = document.getElementById('bili-url-input');
+  
+  const btnSelectAll = document.getElementById('btn-select-all');
+  const btnDeselectAll = document.getElementById('btn-deselect-all');
+  const chkHeadSelect = document.getElementById('chk-head-select');
+  const btnStartDownload = document.getElementById('btn-start-download');
+  const btnClearCompletedTasks = document.getElementById('btn-clear-completed-tasks');
+
+  // Toggle View
+  if (btnToggleDownloader && downloaderView) {
+    btnToggleDownloader.addEventListener('click', () => {
+      btnToggleDownloader.classList.add('active');
+      playerContainer.classList.add('hidden');
+      downloaderView.classList.remove('hidden');
+      videoElement.pause(); // 切换时自动暂停视频
+      updateSavePathLabel();
+      refreshTasksList();
+    });
+  }
+
+  if (btnBackToPlayer && downloaderView) {
+    btnBackToPlayer.addEventListener('click', () => {
+      btnToggleDownloader.classList.remove('active');
+      downloaderView.classList.add('hidden');
+      playerContainer.classList.remove('hidden');
+    });
+  }
+
+  // QR Login triggers
+  if (btnBiliLogin) {
+    btnBiliLogin.addEventListener('click', showBiliLoginModal);
+  }
+  if (btnCloseLoginModal) {
+    btnCloseLoginModal.addEventListener('click', hideBiliLoginModal);
+  }
+  if (btnRefreshQrcode) {
+    btnRefreshQrcode.addEventListener('click', showBiliLoginModal);
+  }
+  if (btnBiliLogout) {
+    btnBiliLogout.addEventListener('click', handleBiliLogout);
+  }
+
+  // URL Parse
+  if (btnParseBili && biliUrlInput) {
+    btnParseBili.addEventListener('click', parseBiliUrl);
+    biliUrlInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') parseBiliUrl();
+    });
+  }
+
+  // Selection actions
+  if (btnSelectAll) {
+    btnSelectAll.addEventListener('click', () => {
+      chkHeadSelect.checked = true;
+      toggleAllEpisodesSelection(true);
+    });
+  }
+  if (btnDeselectAll) {
+    btnDeselectAll.addEventListener('click', () => {
+      chkHeadSelect.checked = false;
+      toggleAllEpisodesSelection(false);
+    });
+  }
+  if (chkHeadSelect) {
+    chkHeadSelect.addEventListener('change', (e) => {
+      toggleAllEpisodesSelection(e.target.checked);
+    });
+  }
+
+  // Start Download
+  if (btnStartDownload) {
+    btnStartDownload.addEventListener('click', startBiliDownload);
+  }
+
+  // Clear completed tasks
+  if (btnClearCompletedTasks) {
+    btnClearCompletedTasks.addEventListener('click', clearCompletedTasksFromUI);
+  }
+
+  // IPC progress receiver
+  ipcRenderer.on('download-task-update', (event, task) => {
+    renderTaskItem(task);
+  });
+
+  // IPC directory tree rescan receiver
+  ipcRenderer.on('rescan-directory', async (event, savePath) => {
+    if (savePath === currentDirectory) {
+      const tree = await ipcRenderer.invoke('get-directory-tree', currentDirectory);
+      if (tree) {
+        renderDirectoryTree(tree);
+      }
+    }
+  });
+
+  // Query Profile on Startup
+  checkBiliProfile();
+  updateSavePathLabel();
+  refreshTasksList();
+}
+
+// -------------------------------------------------------------
+// Bilibili Profile Card & Logout
+// -------------------------------------------------------------
+async function checkBiliProfile() {
+  const profile = await ipcRenderer.invoke('bili-get-profile');
+  const biliAvatar = document.getElementById('bili-avatar');
+  const biliName = document.getElementById('bili-name');
+  const biliStatus = document.getElementById('bili-status');
+  const btnBiliLogin = document.getElementById('btn-bili-login');
+  const btnBiliLogout = document.getElementById('btn-bili-logout');
+
+  if (profile && profile.isLogin) {
+    biliAvatar.innerHTML = `<img src="${profile.face}" alt="avatar">`;
+    biliName.textContent = profile.uname;
+    biliStatus.textContent = '大会员/高清下载已解锁';
+    biliStatus.style.color = '#fb7299';
+    btnBiliLogin.classList.add('hidden');
+    btnBiliLogout.classList.remove('hidden');
+  } else {
+    biliAvatar.innerHTML = `
+      <svg class="avatar-placeholder" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"></path>
+      </svg>
+    `;
+    biliName.textContent = '未登录 B 站';
+    biliStatus.textContent = '无法下载高清视频';
+    biliStatus.style.color = '';
+    btnBiliLogin.classList.remove('hidden');
+    btnBiliLogout.classList.add('hidden');
+  }
+}
+
+async function handleBiliLogout() {
+  await ipcRenderer.invoke('save-history', { sessdata: null });
+  checkBiliProfile();
+}
+
+// -------------------------------------------------------------
+// Bilibili QR code Login Actions
+// -------------------------------------------------------------
+async function showBiliLoginModal() {
+  const modal = document.getElementById('bili-login-modal');
+  const qrcodeOverlay = document.getElementById('qrcode-overlay');
+  const biliQrcode = document.getElementById('bili-qrcode');
+  
+  qrcodeOverlay.classList.add('hidden');
+  biliQrcode.innerHTML = '<span style="color:var(--text-muted); font-size:12px;">正在生成二维码...</span>';
+  modal.classList.remove('hidden');
+
+  const qrcodeData = await ipcRenderer.invoke('bili-get-qrcode');
+  if (qrcodeData && qrcodeData.url) {
+    biliQrcodeKey = qrcodeData.qrcode_key;
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(qrcodeData.url)}`;
+    biliQrcode.innerHTML = `<img src="${qrUrl}" alt="Scan Me">`;
+    
+    // Poll Login Status
+    if (biliLoginPollInterval) clearInterval(biliLoginPollInterval);
+    biliLoginPollInterval = setInterval(pollBiliLoginStatus, 3000);
+  } else {
+    biliQrcode.innerHTML = '<span style="color:#ef4444; font-size:12px;">生成二维码失败，请关闭重试</span>';
+  }
+}
+
+function hideBiliLoginModal() {
+  const modal = document.getElementById('bili-login-modal');
+  modal.classList.add('hidden');
+  if (biliLoginPollInterval) {
+    clearInterval(biliLoginPollInterval);
+    biliLoginPollInterval = null;
+  }
+}
+
+async function pollBiliLoginStatus() {
+  if (!biliQrcodeKey) return;
+  
+  const pollRes = await ipcRenderer.invoke('bili-poll-login', biliQrcodeKey);
+  const qrcodeOverlay = document.getElementById('qrcode-overlay');
+  const qrcodeStatusText = document.getElementById('qrcode-status-text');
+  
+  if (pollRes.success) {
+    hideBiliLoginModal();
+    // Save SESSDATA cookie to history
+    await ipcRenderer.invoke('save-history', { sessdata: pollRes.sessdata });
+    await checkBiliProfile();
+  } else {
+    const code = pollRes.code;
+    if (code === 86038) {
+      // Expired
+      clearInterval(biliLoginPollInterval);
+      biliLoginPollInterval = null;
+      qrcodeStatusText.textContent = '二维码已过期';
+      qrcodeOverlay.classList.remove('hidden');
+    } else if (code === 86090) {
+      // Scanned but not confirmed
+      const modalSubtitle = document.querySelector('.modal-subtitle');
+      if (modalSubtitle) modalSubtitle.textContent = '已扫描，请在手机上点击确认';
+    }
+  }
+}
+
+// -------------------------------------------------------------
+// Download Workbench Actions & UI Rendering
+// -------------------------------------------------------------
+function updateSavePathLabel() {
+  const lblSavePath = document.getElementById('lbl-save-path');
+  if (lblSavePath) {
+    lblSavePath.textContent = currentDirectory ? currentDirectory : '系统下载目录';
+  }
+}
+
+async function parseBiliUrl() {
+  const input = document.getElementById('bili-url-input');
+  const url = input.value.trim();
+  if (!url) return;
+
+  showLoading('正在解析 B站 链接，请稍候...');
+  
+  try {
+    const parsed = await ipcRenderer.invoke('bili-parse-url', url);
+    const resultsSection = document.getElementById('parsed-results-section');
+    const lblCollectionTitle = document.getElementById('lbl-collection-title');
+    const episodesTbody = document.getElementById('episodes-tbody');
+    
+    // Save to state
+    parsedEpisodesList = parsed.videos || [];
+    selectedEpisodesSet = new Set(parsedEpisodesList.map(v => v.cid));
+    
+    lblCollectionTitle.textContent = parsed.title || '已解析视频';
+    episodesTbody.innerHTML = '';
+    
+    parsedEpisodesList.forEach(video => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><input type="checkbox" class="chk-episode" data-cid="${video.cid}" checked></td>
+        <td>P${video.index}</td>
+        <td class="video-title-td" style="font-weight: 500;">${video.title}</td>
+        <td style="text-align: right; color: var(--text-muted); font-size: 11px;">待下载</td>
+      `;
+      episodesTbody.appendChild(tr);
+    });
+
+    // Attach listeners to checks
+    document.querySelectorAll('.chk-episode').forEach(chk => {
+      chk.addEventListener('change', (e) => {
+        const cid = parseInt(e.target.dataset.cid);
+        if (e.target.checked) {
+          selectedEpisodesSet.add(cid);
+        } else {
+          selectedEpisodesSet.delete(cid);
+        }
+        updateSelectedCountLabel();
+      });
+    });
+
+    updateSelectedCountLabel();
+    resultsSection.classList.remove('hidden');
+    input.value = ''; // clean input
+    
+  } catch (err) {
+    alert('解析链接失败: ' + err.message);
+  } finally {
+    hideLoading();
+  }
+}
+
+function toggleAllEpisodesSelection(checked) {
+  document.querySelectorAll('.chk-episode').forEach(chk => {
+    chk.checked = checked;
+    const cid = parseInt(chk.dataset.cid);
+    if (checked) {
+      selectedEpisodesSet.add(cid);
+    } else {
+      selectedEpisodesSet.delete(cid);
+    }
+  });
+  updateSelectedCountLabel();
+}
+
+function updateSelectedCountLabel() {
+  const lblCount = document.getElementById('lbl-selected-count');
+  if (lblCount) {
+    lblCount.textContent = `已选中 ${selectedEpisodesSet.size} / ${parsedEpisodesList.length} 项`;
+  }
+}
+
+async function startBiliDownload() {
+  if (selectedEpisodesSet.size === 0) {
+    alert('请先勾选需要下载的选集');
+    return;
+  }
+
+  const episodesToDownload = parsedEpisodesList.filter(v => selectedEpisodesSet.has(v.cid));
+  const quality = document.getElementById('bili-quality-select').value;
+  
+  const resultsSection = document.getElementById('parsed-results-section');
+  resultsSection.classList.add('hidden'); // hide workbench select
+  
+  await ipcRenderer.invoke('bili-start-download', {
+    episodes: episodesToDownload,
+    quality: quality,
+    savePath: currentDirectory || null
+  });
+
+  refreshTasksList();
+}
+
+async function refreshTasksList() {
+  const tasks = await ipcRenderer.invoke('bili-get-tasks');
+  const container = document.getElementById('tasks-container');
+  const placeholder = document.getElementById('queue-empty-placeholder');
+  
+  if (tasks.length > 0) {
+    if (placeholder) placeholder.classList.add('hidden');
+    tasks.forEach(task => renderTaskItem(task));
+  } else {
+    if (placeholder) placeholder.classList.remove('hidden');
+    // Clear list
+    container.innerHTML = '';
+    container.appendChild(placeholder);
+  }
+}
+
+function renderTaskItem(task) {
+  let taskEl = document.getElementById(`task-item-${task.id}`);
+  if (!taskEl) {
+    taskEl = document.createElement('div');
+    taskEl.id = `task-item-${task.id}`;
+    taskEl.className = 'task-item';
+    
+    const container = document.getElementById('tasks-container');
+    const placeholder = document.getElementById('queue-empty-placeholder');
+    if (placeholder) placeholder.classList.add('hidden');
+    container.appendChild(taskEl);
+  }
+  
+  const formatSize = (bytes) => {
+    if (!bytes) return '0.0 MB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+  
+  const downloadedStr = formatSize(task.bytesDownloaded);
+  const totalStr = formatSize(task.bytesTotal);
+  
+  let statusText = '等待中';
+  let statusClass = 'pending';
+  let barFillClass = '';
+  
+  if (task.status === 'downloading') {
+    statusText = `下载中 (${task.progress}%)`;
+    statusClass = 'downloading';
+  } else if (task.status === 'merging') {
+    statusText = '合并音视频轨...';
+    statusClass = 'merging';
+    barFillClass = 'merging';
+  } else if (task.status === 'completed') {
+    statusText = '已完成';
+    statusClass = 'completed';
+    barFillClass = 'completed';
+  } else if (task.status === 'failed') {
+    statusText = '下载失败';
+    statusClass = 'failed';
+    barFillClass = 'failed';
+  } else if (task.status === 'paused') {
+    statusText = '已暂停';
+    statusClass = 'paused';
+  }
+  
+  let actionHtml = '';
+  if (task.status === 'pending' || task.status === 'downloading' || task.status === 'merging') {
+    actionHtml = `
+      <button class="btn-task-action delete" onclick="cancelBiliTask('${task.id}')" title="取消任务">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    `;
+  } else {
+    actionHtml = `
+      <button class="btn-task-action delete" onclick="removeBiliTaskFromUI('${task.id}')" title="清除记录">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px;">
+          <polyline points="3 6 5 6 21 6"></polyline>
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+        </svg>
+      </button>
+    `;
+  }
+  
+  taskEl.innerHTML = `
+    <div class="task-meta">
+      <div class="task-title-info">
+        <span class="task-title" title="${task.partTitle || task.title}">${task.partTitle || task.title}</span>
+        <span class="task-subtitle">${task.bvid} | CID: ${task.cid}</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span class="task-status-tag ${statusClass}">${statusText}</span>
+        <div class="task-item-actions">
+          ${actionHtml}
+        </div>
+      </div>
+    </div>
+    <div class="task-progress-section">
+      <div class="task-progress-bar-bg">
+        <div class="task-progress-bar-fill ${barFillClass}" style="width: ${task.progress}%"></div>
+      </div>
+      <span class="task-stats">
+        ${task.status === 'downloading' ? `${task.speed} MB/s | ` : ''}
+        ${downloadedStr}/${totalStr}
+      </span>
+    </div>
+  `;
+}
+
+// Expose actions to window for onclick triggers
+window.cancelBiliTask = async (taskId) => {
+  await ipcRenderer.invoke('bili-cancel-task', taskId);
+  refreshTasksList();
+};
+
+window.removeBiliTaskFromUI = (taskId) => {
+  const taskEl = document.getElementById(`task-item-${taskId}`);
+  if (taskEl) taskEl.remove();
+  
+  const container = document.getElementById('tasks-container');
+  const taskItems = container.querySelectorAll('.task-item');
+  if (taskItems.length === 0) {
+    const placeholder = document.getElementById('queue-empty-placeholder');
+    if (placeholder) placeholder.classList.remove('hidden');
+  }
+};
+
+async function clearCompletedTasksFromUI() {
+  const tasks = await ipcRenderer.invoke('bili-get-tasks');
+  tasks.forEach(task => {
+    if (task.status === 'completed' || task.status === 'failed') {
+      window.removeBiliTaskFromUI(task.id);
+    }
+  });
 }

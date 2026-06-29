@@ -342,7 +342,11 @@ ipcMain.handle('get-history', async () => {
   try {
     if (fs.existsSync(HISTORY_FILE)) {
       const data = fs.readFileSync(HISTORY_FILE, 'utf8');
-      return JSON.parse(data);
+      const historyObj = JSON.parse(data);
+      if (historyObj.sessdata) {
+        sessdata = historyObj.sessdata;
+      }
+      return historyObj;
     }
   } catch (err) {
     console.error('Error reading history file:', err);
@@ -352,7 +356,6 @@ ipcMain.handle('get-history', async () => {
 
 ipcMain.handle('save-history', async (event, historyData) => {
   try {
-    // Merge existing history with updates
     let currentHistory = {};
     if (fs.existsSync(HISTORY_FILE)) {
       try {
@@ -360,6 +363,9 @@ ipcMain.handle('save-history', async (event, historyData) => {
       } catch (e) {}
     }
     const updatedHistory = { ...currentHistory, ...historyData };
+    if (updatedHistory.sessdata) {
+      sessdata = updatedHistory.sessdata;
+    }
     
     fs.mkdirSync(path.dirname(HISTORY_FILE), { recursive: true });
     fs.writeFileSync(HISTORY_FILE, JSON.stringify(updatedHistory, null, 2), 'utf8');
@@ -368,6 +374,529 @@ ipcMain.handle('save-history', async (event, historyData) => {
     console.error('Error writing history file:', err);
     return false;
   }
+});
+
+// ========================================================
+// Bilibili 登录与下载引擎 (Bilibili Downloader Engine)
+// ========================================================
+
+const os = require('os');
+
+let sessdata = null;
+const downloaderTasks = new Map();
+let activeDownloads = 0;
+const MAX_CONCURRENT_DOWNLOADS = 3;
+
+// 带有 SESSDATA 的 B站请求封装
+function biliFetch(url, options = {}) {
+  options.headers = options.headers || {};
+  options.headers['User-Agent'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+  options.headers['Referer'] = 'https://www.bilibili.com';
+  if (sessdata) {
+    options.headers['Cookie'] = `SESSDATA=${sessdata}`;
+  }
+  return fetch(url, options);
+}
+
+// 提取网页源码中的 INITIAL_STATE JSON
+function extractInitialStateJson(html) {
+  try {
+    const marker = 'window.__INITIAL_STATE__=';
+    const startIndex = html.indexOf(marker);
+    if (startIndex === -1) return null;
+    
+    const tail = html.substring(startIndex + marker.length);
+    let endIndex = tail.indexOf(';(function');
+    if (endIndex === -1) endIndex = tail.indexOf(';</script>');
+    if (endIndex === -1) endIndex = tail.indexOf('\n');
+    
+    if (endIndex === -1) return null;
+    
+    const jsonText = tail.substring(0, endIndex).trim();
+    return JSON.parse(jsonText);
+  } catch (err) {
+    console.error('Failed to parse window.__INITIAL_STATE__:', err);
+  }
+  return null;
+}
+
+// 递归抓取合集列表
+async function fetchBiliPlaylist(bvid) {
+  const res = await biliFetch(`https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`);
+  const json = await res.json();
+  if (json.code !== 0 || !json.data) {
+    throw new Error(json.message || '获取视频信息失败');
+  }
+  
+  const data = json.data;
+  
+  // 1. 多分P
+  if (data.pages && data.pages.length > 1) {
+    return {
+      type: 'multi_part',
+      title: data.title,
+      videos: data.pages.map(p => ({
+        bvid: bvid,
+        cid: p.cid,
+        title: p.part || `P${p.page}`,
+        index: p.page
+      }))
+    };
+  }
+  
+  // 2. UGC 订阅合集/系列
+  if (data.ugc_season && data.ugc_season.sections) {
+    const section = data.ugc_season.sections[0];
+    if (section && section.episodes && section.episodes.length > 0) {
+      return {
+        type: 'collection',
+        title: data.ugc_season.title || data.title,
+        videos: section.episodes.map((e, idx) => ({
+          bvid: e.bvid,
+          cid: e.cid,
+          title: e.title,
+          index: idx + 1
+        }))
+      };
+    }
+  }
+  
+  // 3. HTML 兜底（从源码提取 __INITIAL_STATE__）
+  try {
+    const htmlRes = await biliFetch(`https://www.bilibili.com/video/${bvid}`);
+    const html = await htmlRes.text();
+    const initialState = extractInitialStateJson(html);
+    
+    if (initialState) {
+      const ugcSeason = initialState.ugc_season || (initialState.videoData && initialState.videoData.ugc_season);
+      if (ugcSeason && ugcSeason.sections && ugcSeason.sections[0]) {
+        const section = ugcSeason.sections[0];
+        if (section.episodes && section.episodes.length > 0) {
+          return {
+            type: 'collection',
+            title: ugcSeason.title || data.title,
+            videos: section.episodes.map((e, idx) => {
+              const epBvid = e.bvid || (e.arc && e.arc.bvid);
+              const epCid = (e.page && e.page.cid) || e.cid;
+              const epTitle = e.title || (e.arc && e.arc.title) || `选集 ${idx + 1}`;
+              return {
+                bvid: epBvid,
+                cid: epCid,
+                title: epTitle,
+                index: idx + 1
+              };
+            })
+          };
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Scraping HTML initial state failed:', e);
+  }
+  
+  // 4. 单视频
+  return {
+    type: 'single',
+    title: data.title,
+    videos: [{
+      bvid: bvid,
+      cid: data.cid,
+      title: data.title,
+      index: 1
+    }]
+  };
+}
+
+// 自动质量降级获取流地址
+async function fetchBiliPlayurl(bvid, cid, quality) {
+  const qualityList = [120, 116, 112, 80, 64, 32];
+  let startIndex = qualityList.indexOf(parseInt(quality));
+  if (startIndex === -1) startIndex = 3; // 默认 1080P (80)
+  
+  for (let i = startIndex; i < qualityList.length; i++) {
+    const qn = qualityList[i];
+    try {
+      const url = `https://api.bilibili.com/x/player/playurl?bvid=${bvid}&cid=${cid}&qn=${qn}&fnval=16&fourk=1`;
+      const res = await biliFetch(url);
+      const json = await res.json();
+      
+      if (json.code === 0 && json.data && json.data.dash) {
+        const dash = json.data.dash;
+        const videoArray = dash.video || [];
+        const audioArray = dash.audio || [];
+        
+        if (videoArray.length > 0 && audioArray.length > 0) {
+          const videoUrl = videoArray[0].baseUrl;
+          const audioUrl = audioArray[0].baseUrl;
+          return { videoUrl, audioUrl };
+        }
+      }
+    } catch (e) {
+      console.warn(`Quality qn=${qn} playurl fetch failed, retrying lower...`, e);
+    }
+  }
+  return null;
+}
+
+// 流式断点/取消下载写入
+async function downloadBiliStream(url, destPath, abortSignal, onProgress) {
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Referer': 'https://www.bilibili.com'
+  };
+  
+  const response = await fetch(url, { headers, signal: abortSignal });
+  if (!response.ok) {
+    throw new Error(`Download stream failed: status ${response.status}`);
+  }
+  
+  const totalBytes = parseInt(response.headers.get('content-length'), 10) || 0;
+  const fileStream = fs.createWriteStream(destPath);
+  
+  let downloadedBytes = 0;
+  let bodyStream;
+  if (response.body.getReader) {
+    const { Readable } = require('stream');
+    bodyStream = Readable.fromWeb(response.body);
+  } else {
+    bodyStream = response.body;
+  }
+  
+  try {
+    for await (const chunk of bodyStream) {
+      if (abortSignal.aborted) {
+        throw new Error('aborted');
+      }
+      fileStream.write(chunk);
+      downloadedBytes += chunk.length;
+      if (onProgress && totalBytes > 0) {
+        onProgress(downloadedBytes, totalBytes);
+      }
+    }
+  } catch (err) {
+    fileStream.end();
+    fs.unlink(destPath, () => {});
+    throw err;
+  }
+  
+  fileStream.end();
+}
+
+// 检测视频是否为 H.265 / HEVC 编码
+function probeHEVC(videoPath) {
+  return new Promise((resolve) => {
+    const ffmpeg = spawn(FFMPEG_PATH, ['-i', videoPath]);
+    let stderr = '';
+    ffmpeg.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+    ffmpeg.on('close', () => {
+      const lower = stderr.toLowerCase();
+      resolve(lower.includes('hevc') || lower.includes('h265') || lower.includes('hev1'));
+    });
+    ffmpeg.on('error', () => {
+      resolve(false);
+    });
+  });
+}
+
+// 合并视频与音频轨，在 macOS 上强制注入 hvc1 标志确保原生播放支持
+function mergeAudioVideo(videoPath, audioPath, outputPath) {
+  return new Promise((resolve, reject) => {
+    probeHEVC(videoPath).then((isHEVC) => {
+      const args = [
+        '-i', videoPath,
+        '-i', audioPath,
+        '-c:v', 'copy'
+      ];
+      
+      if (isHEVC) {
+        args.push('-tag:v', 'hvc1');
+      }
+      
+      args.push('-c:a', 'copy', '-y', outputPath);
+      
+      const ffmpeg = spawn(FFMPEG_PATH, args);
+      
+      ffmpeg.on('close', (code) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`FFmpeg merge failed with code ${code}`));
+        }
+      });
+      
+      ffmpeg.on('error', (err) => {
+        reject(err);
+      });
+    });
+  });
+}
+
+function sanitizeFilename(filename) {
+  return filename.replace(/[\\/:*?"<>|]/g, '_').trim();
+}
+
+// 向渲染窗口推送下载进度
+function sendTaskProgress(id) {
+  const task = downloaderTasks.get(id);
+  if (!task) return;
+  mainWindow.webContents.send('download-task-update', {
+    id: task.id,
+    bvid: task.bvid,
+    cid: task.cid,
+    title: task.title,
+    partTitle: task.partTitle,
+    progress: task.progress,
+    speed: task.speed,
+    status: task.status,
+    bytesDownloaded: task.bytesDownloaded,
+    bytesTotal: task.bytesTotal,
+    error: task.error
+  });
+}
+
+// 下载并合并的核心异步任务
+async function runDownloadTask(task) {
+  const tempDir = os.tmpdir();
+  const videoTempPath = path.join(tempDir, `${task.id}_video.m4v`);
+  const audioTempPath = path.join(tempDir, `${task.id}_audio.m4a`);
+  
+  try {
+    const playUrlRes = await fetchBiliPlayurl(task.bvid, task.cid, task.quality);
+    if (!playUrlRes) {
+      throw new Error('获取下载流地址失败，请重新登录尝试');
+    }
+    
+    const { videoUrl, audioUrl } = playUrlRes;
+    
+    let videoDownloadedBytes = 0;
+    let videoTotalBytes = 0;
+    let audioDownloadedBytes = 0;
+    let audioTotalBytes = 0;
+    
+    let lastProgressTime = Date.now();
+    let lastDownloadedBytes = 0;
+    
+    const updateProgress = () => {
+      const total = videoTotalBytes + audioTotalBytes;
+      const current = videoDownloadedBytes + audioDownloadedBytes;
+      task.bytesDownloaded = current;
+      task.bytesTotal = total;
+      
+      if (total > 0) {
+        task.progress = Math.round((current / total) * 100);
+      }
+      
+      const now = Date.now();
+      const elapsed = (now - lastProgressTime) / 1000;
+      if (elapsed >= 0.5) {
+        const deltaBytes = current - lastDownloadedBytes;
+        task.speed = parseFloat(((deltaBytes / elapsed) / (1024 * 1024)).toFixed(1));
+        lastProgressTime = now;
+        lastDownloadedBytes = current;
+      }
+      
+      sendTaskProgress(task.id);
+    };
+    
+    const downloadVideoPromise = downloadBiliStream(videoUrl, videoTempPath, task.controller.signal, (downloaded, total) => {
+      videoDownloadedBytes = downloaded;
+      videoTotalBytes = total;
+      updateProgress();
+    });
+    
+    const downloadAudioPromise = downloadBiliStream(audioUrl, audioTempPath, task.controller.signal, (downloaded, total) => {
+      audioDownloadedBytes = downloaded;
+      audioTotalBytes = total;
+      updateProgress();
+    });
+    
+    await Promise.all([downloadVideoPromise, downloadAudioPromise]);
+    
+    task.status = 'merging';
+    task.speed = 0;
+    sendTaskProgress(task.id);
+    
+    const sanitizedTitle = sanitizeFilename(task.partTitle || task.title || 'bili_video');
+    const finalFilePath = path.join(task.savePath, `${sanitizedTitle}.mp4`);
+    
+    fs.mkdirSync(task.savePath, { recursive: true });
+    
+    await mergeAudioVideo(videoTempPath, audioTempPath, finalFilePath);
+    
+    fs.unlinkSync(videoTempPath);
+    fs.unlinkSync(audioTempPath);
+    
+    task.status = 'completed';
+    task.progress = 100;
+    sendTaskProgress(task.id);
+    
+    mainWindow.webContents.send('rescan-directory', task.savePath);
+    
+  } catch (err) {
+    if (fs.existsSync(videoTempPath)) fs.unlinkSync(videoTempPath);
+    if (fs.existsSync(audioTempPath)) fs.unlinkSync(audioTempPath);
+    
+    if (task.controller.signal.aborted) {
+      task.status = 'paused';
+    } else {
+      task.status = 'failed';
+      task.error = err.message || '下载出错';
+    }
+    sendTaskProgress(task.id);
+  }
+}
+
+// 调度任务队列
+function processQueue() {
+  if (activeDownloads >= MAX_CONCURRENT_DOWNLOADS) return;
+  
+  for (const [id, task] of downloaderTasks.entries()) {
+    if (task.status === 'pending') {
+      task.status = 'downloading';
+      activeDownloads++;
+      runDownloadTask(task).finally(() => {
+        activeDownloads--;
+        processQueue();
+      });
+      if (activeDownloads >= MAX_CONCURRENT_DOWNLOADS) break;
+    }
+  }
+}
+
+// Bilibili 二维码登录与进度管理 IPC 通道
+ipcMain.handle('bili-get-qrcode', async () => {
+  try {
+    const res = await fetch('https://passport.bilibili.com/x/passport-login/web/qrcode/generate', {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)' }
+    });
+    const json = await res.json();
+    return json.code === 0 ? json.data : null;
+  } catch (err) {
+    console.error('Error generating Bili qrcode:', err);
+    return null;
+  }
+});
+
+ipcMain.handle('bili-poll-login', async (event, qrcodeKey) => {
+  try {
+    const res = await fetch(`https://passport.bilibili.com/x/passport-login/web/qrcode/poll?qrcode_key=${qrcodeKey}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)' }
+    });
+    const json = await res.json();
+    if (json.code === 0 && json.data) {
+      const code = json.data.code;
+      if (code === 0 && json.data.url) {
+        const urlObj = new URL(json.data.url);
+        const extracted = urlObj.searchParams.get('SESSDATA');
+        if (extracted) {
+          sessdata = extracted;
+          return { code, sessdata: extracted, success: true };
+        }
+      }
+      return { code, success: false };
+    }
+  } catch (err) {
+    console.error('Error polling Bili login:', err);
+  }
+  return { code: -1, success: false };
+});
+
+ipcMain.handle('bili-get-profile', async () => {
+  if (!sessdata) return null;
+  try {
+    const res = await biliFetch('https://api.bilibili.com/x/web-interface/nav');
+    const json = await res.json();
+    if (json.code === 0 && json.data) {
+      return {
+        isLogin: json.data.isLogin,
+        uname: json.data.uname,
+        face: json.data.face
+      };
+    }
+  } catch (err) {
+    console.error('Error getting Bili profile:', err);
+  }
+  return null;
+});
+
+ipcMain.handle('bili-parse-url', async (event, url) => {
+  try {
+    const bvidMatch = url.match(/video\/(BV[a-zA-Z0-9]+)/);
+    if (!bvidMatch) {
+      throw new Error('未在链接中匹配到合法的 Bvid');
+    }
+    const bvid = bvidMatch[1];
+    return await fetchBiliPlaylist(bvid);
+  } catch (err) {
+    console.error('Error parsing Bili url:', err);
+    throw err;
+  }
+});
+
+ipcMain.handle('bili-start-download', async (event, { episodes, quality, savePath }) => {
+  const targetSavePath = savePath || app.getPath('downloads');
+  const taskIds = [];
+  
+  for (const item of episodes) {
+    const taskId = 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+    const task = {
+      id: taskId,
+      bvid: item.bvid,
+      cid: item.cid,
+      title: item.title,
+      partTitle: item.partTitle,
+      quality: quality,
+      savePath: targetSavePath,
+      progress: 0,
+      speed: 0,
+      status: 'pending',
+      error: null,
+      bytesDownloaded: 0,
+      bytesTotal: 0,
+      controller: new AbortController()
+    };
+    
+    downloaderTasks.set(taskId, task);
+    taskIds.push(taskId);
+    sendTaskProgress(taskId);
+  }
+  
+  processQueue();
+  return taskIds;
+});
+
+ipcMain.handle('bili-cancel-task', async (event, taskId) => {
+  const task = downloaderTasks.get(taskId);
+  if (task) {
+    task.controller.abort();
+    if (task.status === 'pending') {
+      downloaderTasks.delete(taskId);
+    }
+    return true;
+  }
+  return false;
+});
+
+ipcMain.handle('bili-get-tasks', () => {
+  const list = [];
+  for (const task of downloaderTasks.values()) {
+    list.push({
+      id: task.id,
+      bvid: task.bvid,
+      cid: task.cid,
+      title: task.title,
+      partTitle: task.partTitle,
+      progress: task.progress,
+      speed: task.speed,
+      status: task.status,
+      bytesDownloaded: task.bytesDownloaded,
+      bytesTotal: task.bytesTotal,
+      error: task.error
+    });
+  }
+  return list;
 });
 
 // App Lifecycle

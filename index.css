@@ -1043,3 +1043,703 @@ video {
   border-radius: 50%;
   flex-shrink: 0;
 }
+
+/* ========================================================
+   Bilibili Profile Bar & Sidebar Action Additions
+   ======================================================== */
+.bili-profile-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  padding: 8px 12px;
+  border-radius: 8px;
+  width: 100%;
+  margin-bottom: 8px;
+  transition: border-color 0.2s ease;
+}
+.bili-profile-bar:hover {
+  border-color: rgba(251, 114, 153, 0.4);
+}
+
+.bili-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.bili-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.bili-avatar svg.avatar-placeholder {
+  width: 20px;
+  height: 20px;
+  color: var(--text-muted);
+}
+
+.bili-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.bili-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bili-status {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bili-login-btn, .bili-logout-btn {
+  background-color: #fb7299;
+  color: white;
+  border: none;
+  font-family: var(--font-family);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.1s ease;
+}
+.bili-login-btn:hover {
+  background-color: #fc8bab;
+}
+.bili-logout-btn {
+  background-color: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+}
+.bili-logout-btn:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: var(--text-main);
+}
+body[data-theme="ningzhi"] .bili-logout-btn:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.sidebar-actions {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.btn-secondary-action {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+.btn-secondary-action:hover {
+  background-color: var(--bg-hover);
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+.btn-secondary-action.active {
+  background-color: var(--accent-color);
+  color: white;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+/* ========================================================
+   Downloader Workbench Panel Styles
+   ======================================================== */
+.downloader-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-main);
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+.downloader-header {
+  height: 52px;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--bg-titlebar);
+}
+.downloader-header h2 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+.btn-primary-text {
+  background: transparent;
+  border: none;
+  color: var(--accent-color);
+  font-family: var(--font-family);
+  font-size: 13px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+.btn-primary-text:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+.downloader-content {
+  flex: 1;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: hidden;
+}
+
+.downloader-input-section {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.downloader-input-section input {
+  flex: 1;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-main);
+  font-family: var(--font-family);
+  font-size: 13px;
+  padding: 10px 14px;
+  outline: none;
+  transition: all 0.2s ease;
+}
+.downloader-input-section input:focus {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 8px var(--accent-glow);
+  background-color: rgba(255, 255, 255, 0.02);
+}
+body[data-theme="ningzhi"] .downloader-input-section input:focus {
+  background-color: rgba(0, 0, 0, 0.01);
+}
+
+.downloader-workbench {
+  flex: 1;
+  display: flex;
+  gap: 20px;
+  overflow: hidden;
+}
+
+.downloader-settings {
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background-color: var(--bg-sidebar);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-group label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.save-path-display {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.save-path-display span {
+  font-weight: 600;
+  color: var(--text-main);
+  word-break: break-all;
+}
+.save-path-detail {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  line-height: 1.3;
+}
+.dropdown-select {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-main);
+  font-family: var(--font-family);
+  font-size: 12px;
+  padding: 8px;
+  outline: none;
+  cursor: pointer;
+}
+
+.settings-tips {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.downloader-main-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: hidden;
+}
+
+.parsed-results-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-sidebar);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  overflow: hidden;
+  max-height: 50%;
+}
+.results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.results-header h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 70%;
+}
+.btn-link {
+  background: transparent;
+  border: none;
+  color: var(--accent-color);
+  font-family: var(--font-family);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.btn-link:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+.episodes-table-container {
+  flex: 1;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--bg-card);
+}
+.episodes-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: left;
+}
+.episodes-table th, .episodes-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-main);
+}
+.episodes-table th {
+  background-color: rgba(255, 255, 255, 0.02);
+  font-weight: 600;
+  color: var(--text-muted);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+body[data-theme="ningzhi"] .episodes-table th {
+  background-color: rgba(0, 0, 0, 0.02);
+}
+.episodes-table tbody tr:hover {
+  background-color: var(--bg-hover);
+}
+.episodes-table input[type="checkbox"] {
+  cursor: pointer;
+}
+
+.action-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+}
+.action-footer span {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.queue-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-sidebar);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  overflow: hidden;
+}
+.queue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.queue-header h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.tasks-container {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.queue-empty-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  height: 100%;
+  font-size: 12px;
+  color: var(--text-muted);
+  border: 2px dashed var(--border-color);
+  border-radius: 6px;
+  padding: 20px;
+}
+
+.task-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 10px 12px;
+  position: relative;
+  transition: border-color 0.2s ease;
+}
+.task-item:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+}
+body[data-theme="ningzhi"] .task-item:hover {
+  border-color: rgba(0, 0, 0, 0.15);
+}
+.task-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+}
+.task-title-info {
+  display: flex;
+  flex-direction: column;
+  max-width: 75%;
+}
+.task-title {
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.task-subtitle {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.task-status-tag {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.task-status-tag.pending {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+}
+.task-status-tag.downloading {
+  background-color: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+}
+.task-status-tag.merging {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+}
+.task-status-tag.completed {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+}
+.task-status-tag.failed {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+.task-status-tag.paused {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+}
+
+.task-progress-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.task-progress-bar-bg {
+  flex: 1;
+  height: 4px;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 2px;
+  overflow: hidden;
+}
+body[data-theme="ningzhi"] .task-progress-bar-bg {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+.task-progress-bar-fill {
+  height: 100%;
+  background-color: var(--accent-color);
+  width: 0%;
+  transition: width 0.3s ease;
+}
+.task-progress-bar-fill.merging {
+  background-color: #d97706;
+  width: 100%;
+}
+.task-progress-bar-fill.completed {
+  background-color: #10b981;
+}
+.task-progress-bar-fill.failed {
+  background-color: #ef4444;
+}
+
+.task-stats {
+  font-size: 10px;
+  color: var(--text-muted);
+  width: 100px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.task-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.btn-task-action {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+.btn-task-action:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-main);
+}
+.btn-task-action.delete:hover {
+  color: #ef4444;
+  background-color: rgba(239, 68, 68, 0.1);
+}
+
+/* ========================================================
+   Bilibili QR Code Login Modal Styles
+   ======================================================== */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  opacity: 1;
+  transition: opacity 0.25s ease;
+}
+.modal-overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.modal-card {
+  background-color: rgba(20, 26, 40, 0.95);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  width: 320px;
+  padding: 24px;
+  position: relative;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(16px);
+  transform: translateY(0);
+  transition: transform 0.25s ease;
+}
+body[data-theme="ningzhi"] .modal-card {
+  background-color: rgba(238, 236, 227, 0.98);
+}
+.modal-overlay.hidden .modal-card {
+  transform: translateY(20px);
+}
+
+.modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+.modal-close:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-main);
+}
+
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.bili-tv-icon {
+  margin-bottom: 12px;
+}
+.modal-body h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 4px;
+}
+.modal-subtitle {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+}
+
+.qrcode-wrapper {
+  position: relative;
+  width: 180px;
+  height: 180px;
+  background-color: white;
+  border-radius: 8px;
+  padding: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  margin-bottom: 20px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.qrcode-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.qrcode-container img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.qrcode-status-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.85);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 8px;
+}
+.qrcode-status-overlay span {
+  font-size: 12px;
+  font-weight: 500;
+  color: #fff;
+}
+.btn-refresh-text {
+  background-color: #fb7299;
+  color: #fff;
+  border: none;
+  font-family: var(--font-family);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.btn-refresh-text:hover {
+  background-color: #fc8bab;
+}
+
+.scan-tip {
+  font-size: 11px;
+  color: var(--text-muted);
+}
