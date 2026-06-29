@@ -1830,8 +1830,8 @@ body[data-theme="ningzhi"] .modal-card {
   box-shadow: 0 0 5px rgba(239, 68, 68, 0.4);
 }
 
-/* 播放过且未完结：红色外圈，中间透明，外圈宽度 2px */
+/* 播放过且未完结：半圆型（红色外圈 2px，左侧半实心，右侧半透明） */
 .tree-watch-dot.partial {
-  background-color: transparent;
+  background: linear-gradient(to right, #ef4444 50%, transparent 50%);
   border: 2px solid #ef4444;
 }
