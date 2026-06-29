@@ -78,6 +78,14 @@ function startVideoServer() {
     }
   });
 
+  videoServer.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`Video server port ${SERVER_PORT} is already in use. Assuming another instance is active.`);
+    } else {
+      console.error('Video streaming server error:', err);
+    }
+  });
+
   videoServer.listen(SERVER_PORT, () => {
     console.log(`Video streaming server listening on port ${SERVER_PORT}`);
   });
