@@ -162,6 +162,41 @@
                 <input type="range" id="volume-slider" class="volume-slider" min="0" max="100" value="100">
               </div>
 
+              <!-- Theme Selector -->
+              <div class="theme-select-container">
+                <button id="btn-theme" class="control-btn" title="切换皮肤 (中国传统色彩)">
+                  <svg class="control-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 14.7255 3.09032 17.1962 4.85857 19C5.03362 19.175 5.0934 19.4312 5.02102 19.673C4.94589 19.9238 4.74312 20.1068 4.48443 20.1558C3.12574 20.4137 2.08333 21.0853 2.08333 22C2.08333 22 6.47715 22 12 22Z"></path>
+                    <circle cx="7.5" cy="10.5" r="1.5" fill="currentColor"></circle>
+                    <circle cx="11.5" cy="7.5" r="1.5" fill="currentColor"></circle>
+                    <circle cx="16.5" cy="9.5" r="1.5" fill="currentColor"></circle>
+                    <circle cx="15.5" cy="14.5" r="1.5" fill="currentColor"></circle>
+                  </svg>
+                </button>
+                <div class="theme-dropdown" id="theme-dropdown">
+                  <div class="theme-option active" data-theme="default">
+                    <span class="theme-color-preview" style="background: #0b0f19; border: 1px solid #3b82f6;"></span>
+                    玄天 (深空蓝黑)
+                  </div>
+                  <div class="theme-option" data-theme="zhucui">
+                    <span class="theme-color-preview" style="background: #07140f; border: 1px solid #10b981;"></span>
+                    竹翠 (竹叶翠绿)
+                  </div>
+                  <div class="theme-option" data-theme="xiangye">
+                    <span class="theme-color-preview" style="background: #140f07; border: 1px solid #f59e0b;"></span>
+                    缃叶 (秋叶琥珀)
+                  </div>
+                  <div class="theme-option" data-theme="daimo">
+                    <span class="theme-color-preview" style="background: #060606; border: 1px solid #a1a1aa;"></span>
+                    黛墨 (徽墨纯黑)
+                  </div>
+                  <div class="theme-option" data-theme="ningzhi">
+                    <span class="theme-color-preview" style="background: #f5f4ef; border: 1px solid #c2410c;"></span>
+                    凝脂 (温润玉白)
+                  </div>
+                </div>
+              </div>
+
               <!-- Playback Speed -->
               <div class="speed-select-container">
                 <button id="btn-speed" class="control-btn speed-btn">1.0x</button>

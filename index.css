@@ -13,6 +13,113 @@
   --mac-titlebar-height: 28px;
 }
 
+/* ========================================================
+   中国传统色彩皮肤主题 (Traditional Chinese Color Themes)
+   ======================================================== */
+
+/* 竹翠绿 (zhucui) - 碧水修竹 */
+body[data-theme="zhucui"] {
+  --bg-main: #06110d;
+  --bg-sidebar: rgba(10, 26, 20, 0.85);
+  --bg-card: rgba(20, 46, 36, 0.45);
+  --bg-hover: rgba(16, 185, 129, 0.15);
+  --accent-color: #10b981;
+  --accent-glow: rgba(16, 185, 129, 0.4);
+  --text-main: #ecfdf5;
+  --text-muted: #a7f3d0;
+  --border-color: rgba(255, 255, 255, 0.06);
+}
+
+/* 缃叶黄 (xiangye) - 缃帙秋叶 */
+body[data-theme="xiangye"] {
+  --bg-main: #140d06;
+  --bg-sidebar: rgba(26, 18, 10, 0.85);
+  --bg-card: rgba(46, 33, 20, 0.45);
+  --bg-hover: rgba(245, 158, 11, 0.15);
+  --accent-color: #d97706;
+  --accent-glow: rgba(245, 158, 11, 0.4);
+  --text-main: #fef3c7;
+  --text-muted: #fde68a;
+  --border-color: rgba(255, 255, 255, 0.06);
+}
+
+/* 黛墨黑 (daimo) - 徽水泼墨 */
+body[data-theme="daimo"] {
+  --bg-main: #060606;
+  --bg-sidebar: rgba(15, 15, 15, 0.85);
+  --bg-card: rgba(26, 26, 26, 0.45);
+  --bg-hover: rgba(255, 255, 255, 0.1);
+  --accent-color: #a1a1aa;
+  --accent-glow: rgba(255, 255, 255, 0.2);
+  --text-main: #f4f4f5;
+  --text-muted: #a1a1aa;
+  --border-color: rgba(255, 255, 255, 0.06);
+}
+
+/* 凝脂白 (ningzhi) - 温润如玉 (Light Theme) */
+body[data-theme="ningzhi"] {
+  --bg-main: #f5f4ef;
+  --bg-sidebar: rgba(238, 236, 227, 0.85);
+  --bg-card: rgba(220, 217, 204, 0.6);
+  --bg-hover: rgba(194, 65, 12, 0.1);
+  --accent-color: #c2410c; /* 朱砂红 */
+  --accent-glow: rgba(194, 65, 12, 0.3);
+  --text-main: #1c1c1a;
+  --text-muted: #5c5c56;
+  --border-color: rgba(0, 0, 0, 0.08);
+}
+
+/* 浅色主题专项适配 overrides */
+body[data-theme="ningzhi"] .welcome-overlay {
+  background-color: #f5f4ef;
+}
+body[data-theme="ningzhi"] .mac-titlebar {
+  background-color: #eae9e2;
+}
+body[data-theme="ningzhi"] .btn-primary {
+  color: white;
+}
+body[data-theme="ningzhi"] .timeline-slider {
+  background: rgba(0, 0, 0, 0.12);
+}
+body[data-theme="ningzhi"] .timeline-buffered {
+  background-color: rgba(0, 0, 0, 0.15);
+}
+body[data-theme="ningzhi"] .timeline-container:hover .timeline-slider::-webkit-slider-thumb {
+  background-color: var(--accent-color);
+}
+body[data-theme="ningzhi"] .volume-slider {
+  background: rgba(0, 0, 0, 0.15);
+}
+body[data-theme="ningzhi"] .volume-slider::-webkit-slider-thumb {
+  background-color: var(--accent-color);
+}
+body[data-theme="ningzhi"] .control-btn:hover {
+  background-color: rgba(0, 0, 0, 0.06);
+}
+body[data-theme="ningzhi"] #btn-play-pause {
+  color: white;
+}
+body[data-theme="ningzhi"] .speed-dropdown,
+body[data-theme="ningzhi"] .theme-dropdown {
+  background-color: rgba(238, 236, 227, 0.95);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+}
+body[data-theme="ningzhi"] .speed-option:hover,
+body[data-theme="ningzhi"] .theme-option:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+body[data-theme="ningzhi"] .speed-option.active,
+body[data-theme="ningzhi"] .theme-option.active {
+  color: white;
+}
+body[data-theme="ningzhi"] #search-input {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+body[data-theme="ningzhi"] #search-input:focus {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
 /* Global Reset */
 * {
   box-sizing: border-box;
@@ -840,4 +947,67 @@ video {
   background-color: var(--accent-color);
   color: white;
   font-weight: 500;
+}
+
+/* ========================================================
+   Theme Dropdown Selector Styles
+   ======================================================== */
+.theme-select-container {
+  position: relative;
+}
+
+.theme-dropdown {
+  position: absolute;
+  bottom: 46px;
+  right: 50%;
+  transform: translateX(50%);
+  background-color: rgba(15, 23, 42, 0.95);
+  border: 1px solid var(--border-color);
+  backdrop-filter: blur(10px);
+  border-radius: 8px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 150px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 5;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.theme-dropdown.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(50%) translateY(-5px);
+}
+
+.theme-option {
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-main);
+  transition: background-color 0.15s ease;
+}
+
+.theme-option:hover {
+  background-color: var(--bg-hover);
+}
+
+.theme-option.active {
+  background-color: var(--accent-color);
+  color: white;
+  font-weight: 600;
+}
+
+.theme-color-preview {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }

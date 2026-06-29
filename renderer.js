@@ -13,6 +13,7 @@ let recentList = [];
 let controlsTimeout = null;
 let isTimelineDragging = false;
 let historySaveInterval = null;
+let currentTheme = 'default';
 
 // DOM Elements
 const btnOpenFolder = document.getElementById('btn-open-folder');
@@ -52,6 +53,8 @@ const iconFullscreenExit = document.getElementById('icon-fullscreen-exit');
 const timelineSlider = document.getElementById('timeline-slider');
 const timelineProgress = document.getElementById('timeline-progress');
 const timelineBuffered = document.getElementById('timeline-buffered');
+const btnTheme = document.getElementById('btn-theme');
+const themeDropdown = document.getElementById('theme-dropdown');
 
 // Initialization
 window.addEventListener('DOMContentLoaded', async () => {
@@ -94,14 +97,32 @@ function setupEventListeners() {
   btnSpeed.addEventListener('click', (e) => {
     e.stopPropagation();
     speedDropdown.classList.toggle('visible');
+    themeDropdown.classList.remove('visible');
   });
   document.addEventListener('click', () => {
     speedDropdown.classList.remove('visible');
+    themeDropdown.classList.remove('visible');
   });
   document.querySelectorAll('.speed-option').forEach(option => {
     option.addEventListener('click', (e) => {
       const speed = parseFloat(e.target.dataset.speed);
       setPlaybackSpeed(speed);
+    });
+  });
+
+  // Theme Selector
+  btnTheme.addEventListener('click', (e) => {
+    e.stopPropagation();
+    themeDropdown.classList.toggle('visible');
+    speedDropdown.classList.remove('visible');
+  });
+  document.querySelectorAll('.theme-option').forEach(option => {
+    option.addEventListener('click', (e) => {
+      const target = e.target.closest('.theme-option');
+      if (target) {
+        const theme = target.dataset.theme;
+        setTheme(theme);
+      }
     });
   });
 
@@ -160,6 +181,11 @@ async function loadHistoryAndResume() {
     updateVolumeIcon();
   }
 
+  // Restore Theme
+  if (history.theme) {
+    setTheme(history.theme);
+  }
+
   // Restore last played file and progress
   if (history.lastPlayedFile && history.lastProgress !== undefined) {
     const filePath = history.lastPlayedFile;
@@ -201,7 +227,8 @@ function savePlaybackProgress() {
     lastPlayedFile: currentFilePath,
     lastProgress: currentSec,
     volume: videoElement.volume,
-    recentList: recentList
+    recentList: recentList,
+    theme: currentTheme
   });
 }
 
@@ -275,6 +302,27 @@ async function clearPlaybackHistory() {
       recentList: []
     });
   }
+}
+
+function setTheme(theme) {
+  currentTheme = theme;
+  if (theme === 'default') {
+    document.body.removeAttribute('data-theme');
+  } else {
+    document.body.setAttribute('data-theme', theme);
+  }
+  
+  // Update active option inside dropdown
+  document.querySelectorAll('.theme-option').forEach(option => {
+    if (option.dataset.theme === theme) {
+      option.classList.add('active');
+    } else {
+      option.classList.remove('active');
+    }
+  });
+
+  // Persist theme immediately
+  ipcRenderer.invoke('save-history', { theme: theme });
 }
 
 // Start periodic history saving
