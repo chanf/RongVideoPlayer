@@ -681,8 +681,19 @@ function handleSearch() {
         }
       }
     });
+
+    // 恢复所有目录节点本身的树项显示
+    document.querySelectorAll('.tree-node[data-type="directory"] > .tree-item').forEach(item => {
+      item.style.display = '';
+    });
+
     return;
   }
+
+  // 搜索时将目录行隐藏，使结果只展示匹配的视频文件名
+  document.querySelectorAll('.tree-node[data-type="directory"] > .tree-item').forEach(item => {
+    item.style.display = 'none';
+  });
 
   // Walk and filter files
   treeNodes.forEach(node => {
