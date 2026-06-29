@@ -675,6 +675,16 @@ function handleSearch() {
 // Video Player Controls & Streaming
 // -------------------------------------------------------------
 async function playVideo(filePath, startSec = 0, autoplay = true) {
+  // 如果当前下载界面是开启的，直接切换回播放器界面（后台下载将自动静默运行）
+  const downloaderView = document.getElementById('downloader-view');
+  const btnToggleDownloader = document.getElementById('btn-toggle-downloader');
+  const playerContainer = document.getElementById('player-container');
+  if (downloaderView && !downloaderView.classList.contains('hidden')) {
+    if (btnToggleDownloader) btnToggleDownloader.classList.remove('active');
+    downloaderView.classList.add('hidden');
+    playerContainer.classList.remove('hidden');
+  }
+
   showLoading('正在分析媒体格式...');
   stopHistorySaveTimer();
 
