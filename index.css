@@ -11,6 +11,13 @@
   --border-color: rgba(255, 255, 255, 0.08);
   --font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --mac-titlebar-height: 28px;
+  
+  /* Cohesive player additions */
+  --bg-titlebar: #080b12;
+  --bg-overlay-top: rgba(15, 23, 42, 0.7);
+  --bg-overlay-bottom: rgba(15, 23, 42, 0.85);
+  --text-controls: #ffffff;
+  --accent-hover: #2563eb;
 }
 
 /* ========================================================
@@ -28,6 +35,12 @@ body[data-theme="zhucui"] {
   --text-main: #ecfdf5;
   --text-muted: #a7f3d0;
   --border-color: rgba(255, 255, 255, 0.06);
+  
+  --bg-titlebar: #040c0a;
+  --bg-overlay-top: rgba(10, 26, 20, 0.7);
+  --bg-overlay-bottom: rgba(10, 26, 20, 0.85);
+  --text-controls: #ffffff;
+  --accent-hover: #059669;
 }
 
 /* 缃叶黄 (xiangye) - 缃帙秋叶 */
@@ -41,6 +54,12 @@ body[data-theme="xiangye"] {
   --text-main: #fef3c7;
   --text-muted: #fde68a;
   --border-color: rgba(255, 255, 255, 0.06);
+  
+  --bg-titlebar: #0e0a04;
+  --bg-overlay-top: rgba(26, 18, 10, 0.7);
+  --bg-overlay-bottom: rgba(26, 18, 10, 0.85);
+  --text-controls: #ffffff;
+  --accent-hover: #b45309;
 }
 
 /* 黛墨黑 (daimo) - 徽水泼墨 */
@@ -54,6 +73,12 @@ body[data-theme="daimo"] {
   --text-main: #f4f4f5;
   --text-muted: #a1a1aa;
   --border-color: rgba(255, 255, 255, 0.06);
+  
+  --bg-titlebar: #030303;
+  --bg-overlay-top: rgba(15, 15, 15, 0.7);
+  --bg-overlay-bottom: rgba(15, 15, 15, 0.85);
+  --text-controls: #ffffff;
+  --accent-hover: #71717a;
 }
 
 /* 凝脂白 (ningzhi) - 温润如玉 (Light Theme) */
@@ -67,6 +92,12 @@ body[data-theme="ningzhi"] {
   --text-main: #1c1c1a;
   --text-muted: #5c5c56;
   --border-color: rgba(0, 0, 0, 0.08);
+  
+  --bg-titlebar: #eae9e2;
+  --bg-overlay-top: rgba(238, 236, 227, 0.7);
+  --bg-overlay-bottom: rgba(238, 236, 227, 0.9);
+  --text-controls: #1c1c1a;
+  --accent-hover: #a83a0a;
 }
 
 /* 浅色主题专项适配 overrides */
@@ -141,7 +172,7 @@ body {
 /* macOS Titlebar Drag Area */
 .mac-titlebar {
   height: var(--mac-titlebar-height);
-  background-color: rgba(11, 15, 25, 0.98);
+  background-color: var(--bg-titlebar);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -190,7 +221,7 @@ body {
 
 /* Primary Button Design */
 .btn-primary {
-  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  background: linear-gradient(135deg, var(--accent-color), var(--accent-hover));
   color: white;
   border: none;
   padding: 10px 16px;
@@ -204,12 +235,12 @@ body {
   gap: 8px;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 4px 12px rgba(29, 78, 216, 0.3);
+  box-shadow: 0 4px 12px var(--accent-glow);
 }
 
 .btn-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(29, 78, 216, 0.45), 0 0 0 2px rgba(59, 130, 246, 0.4);
+  box-shadow: 0 6px 16px var(--accent-glow), 0 0 0 2px var(--accent-glow);
 }
 
 .btn-primary:active {
@@ -680,13 +711,12 @@ video {
 /* Elements inside controls that need to accept pointer events */
 .controls-top, .controls-bottom {
   pointer-events: auto;
-  background: linear-gradient(to top, rgba(15, 23, 42, 0.9) 0%, rgba(15, 23, 42, 0.3) 60%, rgba(15, 23, 42, 0) 100%);
   transition: transform 0.3s ease;
 }
 
 .controls-top {
   padding: 24px 24px 40px 24px;
-  background: linear-gradient(to bottom, rgba(15, 23, 42, 0.8) 0%, rgba(15, 23, 42, 0) 100%);
+  background: linear-gradient(to bottom, var(--bg-overlay-top) 0%, transparent 100%);
 }
 
 .controls-top .video-title {
@@ -704,6 +734,7 @@ video {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  background: linear-gradient(to top, var(--bg-overlay-bottom) 0%, transparent 100%);
 }
 
 /* Custom Seek Timeline */
@@ -789,7 +820,7 @@ video {
 .control-btn {
   background: transparent;
   border: none;
-  color: #fff;
+  color: var(--text-controls);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -817,11 +848,12 @@ video {
 
 #btn-play-pause {
   background-color: var(--accent-color);
+  color: #ffffff !important;
   width: 44px;
   height: 44px;
 }
 #btn-play-pause:hover {
-  background-color: #2563eb;
+  background-color: var(--accent-hover);
   box-shadow: 0 0 12px var(--accent-glow);
 }
 
@@ -900,7 +932,7 @@ video {
   width: auto;
   padding: 0 8px;
   border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--border-color);
 }
 
 .speed-dropdown {
