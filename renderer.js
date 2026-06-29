@@ -5,6 +5,7 @@ const path = require('path');
 let currentDirectory = '';
 let currentDirectoryTree = null;
 let autoplayNext = true;
+let favoritesList = [];
 let expandedFolders = new Set();
 let currentFilePath = '';
 let currentFileDuration = 0;
@@ -191,6 +192,12 @@ function setupEventListeners() {
     });
   }
 
+  // Favorite Button
+  const btnFavorite = document.getElementById('btn-favorite');
+  if (btnFavorite) {
+    btnFavorite.addEventListener('click', toggleFavoriteCurrentVideo);
+  }
+
   // Fullscreen
   btnFullscreen.addEventListener('click', toggleFullscreen);
 
@@ -250,6 +257,12 @@ async function loadHistoryAndResume() {
   // Restore Theme
   if (history.theme) {
     setTheme(history.theme);
+  }
+
+  // Restore Favorites
+  if (history.favoritesList) {
+    favoritesList = history.favoritesList;
+    renderFavoritesList();
   }
 
   // Restore Autoplay Toggle State
@@ -792,6 +805,9 @@ async function playVideo(filePath, startSec = 0, autoplay = true) {
     currentFileDuration = meta.duration;
     isTranscoding = meta.needsTranscode;
     transcodeStartTime = startSec;
+
+    // 更新收藏图标指示状态
+    updateFavoriteButtonUI();
 
     // UI Updates
     const baseName = path.basename(filePath);
@@ -1658,3 +1674,104 @@ async function clearCompletedTasksFromUI() {
     }
   });
 }
+
+// -------------------------------------------------------------
+// 我的收藏管理逻辑 (Favorites Management Logic)
+// -------------------------------------------------------------
+function renderFavoritesList() {
+  const container = document.getElementById('favorites-list');
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  if (favoritesList.length === 0) {
+    container.innerHTML = '<div class="tree-placeholder" style="padding: 15px; font-size:11px;">无收藏记录</div>';
+    return;
+  }
+
+  favoritesList.forEach(item => {
+    const div = document.createElement('div');
+    div.className = 'favorite-item';
+    div.innerHTML = `
+      <div class="favorite-info" title="${item.name}">
+        <svg class="favorite-star-icon" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" style="width: 12px; height: 12px;">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+        </svg>
+        <span class="favorite-name">${item.name}</span>
+      </div>
+      <button class="btn-remove-favorite" onclick="removeFavoriteItem(event, '${item.path.replace(/\\/g, '\\\\')}')" title="取消收藏">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 12px; height: 12px;">
+          <polyline points="3 6 5 6 21 6"></polyline>
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+        </svg>
+      </button>
+    `;
+
+    div.addEventListener('click', () => {
+      playVideo(item.path, 0, true);
+    });
+
+    container.appendChild(div);
+  });
+}
+
+function updateFavoriteButtonUI() {
+  const btnFavorite = document.getElementById('btn-favorite');
+  const iconFavHollow = document.getElementById('icon-fav-hollow');
+  const iconFavSolid = document.getElementById('icon-fav-solid');
+
+  if (!btnFavorite || !currentFilePath) return;
+
+  const isFavorited = favoritesList.some(item => item.path === currentFilePath);
+
+  if (isFavorited) {
+    iconFavHollow.classList.add('hidden');
+    iconFavSolid.classList.remove('hidden');
+    btnFavorite.title = '取消收藏';
+  } else {
+    iconFavHollow.classList.remove('hidden');
+    iconFavSolid.classList.add('hidden');
+    btnFavorite.title = '加入收藏';
+  }
+}
+
+function toggleFavoriteCurrentVideo() {
+  if (!currentFilePath) {
+    alert('当前没有播放任何视频，无法收藏！');
+    return;
+  }
+
+  const existingIdx = favoritesList.findIndex(item => item.path === currentFilePath);
+
+  if (existingIdx > -1) {
+    // Already favorited, remove it
+    favoritesList.splice(existingIdx, 1);
+  } else {
+    // Add to favorites
+    favoritesList.push({
+      name: path.basename(currentFilePath),
+      path: currentFilePath,
+      timestamp: Date.now()
+    });
+  }
+
+  // Update UI & save to history
+  updateFavoriteButtonUI();
+  renderFavoritesList();
+  ipcRenderer.invoke('save-history', { favoritesList });
+}
+
+// 暴露给点击删除事件，使用 e.stopPropagation() 防止冒泡播放视频
+window.removeFavoriteItem = (e, filePath) => {
+  if (e) e.stopPropagation();
+
+  const existingIdx = favoritesList.findIndex(item => item.path === filePath);
+  if (existingIdx > -1) {
+    favoritesList.splice(existingIdx, 1);
+    
+    // Update UI & save to history
+    updateFavoriteButtonUI();
+    renderFavoritesList();
+    ipcRenderer.invoke('save-history', { favoritesList });
+  }
+};
