@@ -666,6 +666,18 @@ function sendTaskProgress(id) {
 
 // 下载并合并的核心异步任务
 async function runDownloadTask(task) {
+  const sanitizedTitle = sanitizeFilename(task.partTitle || task.title || 'bili_video');
+  const finalFilePath = path.join(task.savePath, `${sanitizedTitle}.mp4`);
+  
+  // 避免重复下载：如果最终的合并文件已经存在，直接标记为已完成
+  if (fs.existsSync(finalFilePath)) {
+    task.status = 'completed';
+    task.progress = 100;
+    task.speed = 0;
+    sendTaskProgress(task.id);
+    return;
+  }
+
   const tempDir = os.tmpdir();
   const videoTempPath = path.join(tempDir, `${task.id}_video.m4v`);
   const audioTempPath = path.join(tempDir, `${task.id}_audio.m4a`);
@@ -843,8 +855,17 @@ ipcMain.handle('bili-parse-url', async (event, url) => {
   }
 });
 
-ipcMain.handle('bili-start-download', async (event, { episodes, quality, savePath }) => {
-  const targetSavePath = savePath || app.getPath('downloads');
+ipcMain.handle('bili-start-download', async (event, { episodes, quality, savePath, collectionTitle, collectionType }) => {
+  const baseSavePath = savePath || app.getPath('downloads');
+  let targetSavePath = baseSavePath;
+  
+  // 如果是分P视频或合集系列，专门为其建立同名子目录，实现归档分类
+  if (collectionType && collectionType !== 'single' && collectionTitle) {
+    const folderName = sanitizeFilename(collectionTitle);
+    targetSavePath = path.join(baseSavePath, folderName);
+  }
+  
+  fs.mkdirSync(targetSavePath, { recursive: true });
   const taskIds = [];
   
   for (const item of episodes) {

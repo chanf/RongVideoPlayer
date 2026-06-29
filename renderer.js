@@ -986,6 +986,8 @@ let biliLoginPollInterval = null;
 let biliQrcodeKey = null;
 let parsedEpisodesList = [];
 let selectedEpisodesSet = new Set();
+let parsedCollectionTitle = '';
+let parsedCollectionType = 'single';
 
 function initBilibiliDownloader() {
   const btnToggleDownloader = document.getElementById('btn-toggle-downloader');
@@ -1225,6 +1227,8 @@ async function parseBiliUrl() {
     // Save to state
     parsedEpisodesList = parsed.videos || [];
     selectedEpisodesSet = new Set(parsedEpisodesList.map(v => v.cid));
+    parsedCollectionTitle = parsed.title || '';
+    parsedCollectionType = parsed.type || 'single';
     
     lblCollectionTitle.textContent = parsed.title || '已解析视频';
     episodesTbody.innerHTML = '';
@@ -1299,7 +1303,9 @@ async function startBiliDownload() {
   await ipcRenderer.invoke('bili-start-download', {
     episodes: episodesToDownload,
     quality: quality,
-    savePath: currentDirectory || null
+    savePath: currentDirectory || null,
+    collectionTitle: parsedCollectionTitle,
+    collectionType: parsedCollectionType
   });
 
   refreshTasksList();
