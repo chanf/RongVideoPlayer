@@ -414,6 +414,12 @@ function createTreeNodeDOM(node, depth = 0) {
         <polyline points="9 18 15 12 9 6"></polyline>
       </svg>
     `;
+    
+    // caret arrow clicks toggle folder expansion
+    arrowSpan.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleFolderDOM(itemDiv, nodeDiv);
+    });
   } else {
     arrowSpan.classList.add('hidden-arrow');
   }
@@ -428,6 +434,7 @@ function createTreeNodeDOM(node, depth = 0) {
         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
       </svg>
     `;
+    iconSpan.style.cursor = 'pointer';
   } else {
     iconSpan.innerHTML = `
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -442,7 +449,35 @@ function createTreeNodeDOM(node, depth = 0) {
   const nameSpan = document.createElement('span');
   nameSpan.className = 'tree-name';
   nameSpan.textContent = node.name;
+  if (node.type === 'directory') {
+    nameSpan.style.cursor = 'pointer';
+  }
   itemDiv.appendChild(nameSpan);
+
+  // Hook up directory specific Finder open events and hover buttons
+  if (node.type === 'directory') {
+    const handleFinderOpen = (e) => {
+      e.stopPropagation();
+      ipcRenderer.invoke('open-in-finder', node.path);
+    };
+    
+    iconSpan.addEventListener('click', handleFinderOpen);
+    nameSpan.addEventListener('click', handleFinderOpen);
+    
+    // Add Finder hover button
+    const revealBtn = document.createElement('button');
+    revealBtn.className = 'btn-reveal-finder';
+    revealBtn.title = '在 Finder 中打开目录';
+    revealBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 12px; height: 12px;">
+        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+        <polyline points="15 3 21 3 21 9"></polyline>
+        <line x1="10" y1="14" x2="21" y2="3"></line>
+      </svg>
+    `;
+    revealBtn.addEventListener('click', handleFinderOpen);
+    itemDiv.appendChild(revealBtn);
+  }
 
   nodeDiv.appendChild(itemDiv);
 

@@ -1743,3 +1743,37 @@ body[data-theme="ningzhi"] .modal-card {
   font-size: 11px;
   color: var(--text-muted);
 }
+
+/* ========================================================
+   Finder Reveal Button Styles
+   ======================================================== */
+.tree-item {
+  position: relative;
+}
+
+.btn-reveal-finder {
+  position: absolute;
+  right: 8px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease, color 0.2s ease, background-color 0.2s ease;
+  z-index: 2;
+}
+
+.tree-item:hover .btn-reveal-finder {
+  opacity: 1;
+}
+
+.btn-reveal-finder:hover {
+  background-color: var(--bg-hover);
+  color: var(--accent-color);
+}

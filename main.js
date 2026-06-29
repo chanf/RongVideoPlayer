@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -327,6 +327,14 @@ ipcMain.handle('select-directory', async () => {
 ipcMain.handle('get-directory-tree', async (event, folderPath) => {
   if (!folderPath || !fs.existsSync(folderPath)) return null;
   return buildDirectoryTree(folderPath);
+});
+
+ipcMain.handle('open-in-finder', async (event, dirPath) => {
+  if (dirPath && fs.existsSync(dirPath)) {
+    shell.openPath(dirPath);
+    return true;
+  }
+  return false;
 });
 
 ipcMain.handle('probe-video', async (event, filePath) => {
