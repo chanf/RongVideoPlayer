@@ -376,7 +376,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 350px;
+  flex: 1;
   overflow-y: auto;
 }
 
