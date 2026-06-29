@@ -3,6 +3,7 @@ const path = require('path');
 
 // State
 let currentDirectory = '';
+let currentDirectoryTree = null;
 let expandedFolders = new Set();
 let currentFilePath = '';
 let currentFileDuration = 0;
@@ -104,6 +105,7 @@ function setupEventListeners() {
   videoElement.addEventListener('playing', hideLoading);
   videoElement.addEventListener('click', togglePlayPause);
   videoElement.addEventListener('dblclick', toggleFullscreen);
+  videoElement.addEventListener('ended', onVideoEnded);
 
   // Playback Control Buttons
   btnPlayPause.addEventListener('click', togglePlayPause);
@@ -380,6 +382,7 @@ async function selectDirectory() {
 }
 
 function renderDirectoryTree(tree) {
+  currentDirectoryTree = tree;
   directoryTree.innerHTML = '';
   
   if (!tree || !tree.children || tree.children.length === 0) {
@@ -471,7 +474,21 @@ function createTreeNodeDOM(node, depth = 0) {
   // Name
   const nameSpan = document.createElement('span');
   nameSpan.className = 'tree-name';
-  nameSpan.textContent = node.name;
+  if (node.type === 'file') {
+    const historyItem = recentList.find(item => item.path === node.path);
+    if (historyItem && historyItem.progress > 0) {
+      const prog = Math.round(historyItem.progress);
+      if (prog >= 95) {
+        nameSpan.innerHTML = `${node.name} <span class="tree-completed-indicator" title="已播放完成"></span>`;
+      } else {
+        nameSpan.innerHTML = `${node.name} <span class="tree-file-progress">(${prog}%)</span>`;
+      }
+    } else {
+      nameSpan.textContent = node.name;
+    }
+  } else {
+    nameSpan.textContent = node.name;
+  }
   itemDiv.appendChild(nameSpan);
 
   // Hook up directory specific Finder open events and hover buttons
@@ -696,7 +713,16 @@ async function playVideo(filePath, startSec = 0, autoplay = true) {
     transcodeStartTime = startSec;
 
     // UI Updates
-    videoTitle.textContent = path.basename(filePath);
+    const baseName = path.basename(filePath);
+    const existing = recentList.find(item => item.path === filePath);
+    const prog = existing ? existing.progress : 0;
+    if (prog >= 95) {
+      videoTitle.innerHTML = `${baseName} <span class="title-completed-dot" title="播放完成"></span>`;
+    } else if (prog > 0) {
+      videoTitle.textContent = `${baseName} (${Math.round(prog)}%)`;
+    } else {
+      videoTitle.textContent = baseName;
+    }
     totalDurationLabel.textContent = formatTime(meta.duration);
     welcomeOverlay.style.opacity = '0';
     setTimeout(() => { welcomeOverlay.classList.add('hidden'); }, 500);
@@ -762,7 +788,32 @@ function onVideoPause() {
   iconPause.classList.add('hidden');
   stopHistorySaveTimer();
   savePlaybackProgress();
+  
+  // 暂停时立刻刷新目录树和历史列表中的播放进度
+  renderRecentList();
+  if (currentDirectoryTree) {
+    renderDirectoryTree(currentDirectoryTree);
+  }
+  
   showControls(); // keep visible when paused
+}
+
+function onVideoEnded() {
+  if (!currentFilePath) return;
+  
+  // 播放结束，强制写入 100% 进度
+  updateRecentList(currentFilePath, currentFileDuration, currentFileDuration);
+  savePlaybackProgress();
+  
+  // 刷新界面
+  renderRecentList();
+  if (currentDirectoryTree) {
+    renderDirectoryTree(currentDirectoryTree);
+  }
+  
+  // 播放器标题直接展示完成绿点
+  const baseName = path.basename(currentFilePath);
+  videoTitle.innerHTML = `${baseName} <span class="title-completed-dot" title="播放完成"></span>`;
 }
 
 function onVideoTimeUpdate() {

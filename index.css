@@ -1800,3 +1800,35 @@ body[data-theme="ningzhi"] .modal-card {
   background-color: var(--bg-hover);
   color: var(--accent-color);
 }
+
+/* ========================================================
+   Video Playback Progress Indicators
+   ======================================================== */
+.tree-file-progress {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 6px;
+  font-weight: normal;
+}
+
+.tree-completed-indicator {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background-color: #10b981; /* Glowing emerald green */
+  border-radius: 50%;
+  margin-left: 6px;
+  vertical-align: middle;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.7);
+}
+
+.title-completed-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background-color: #10b981;
+  border-radius: 50%;
+  margin-left: 8px;
+  vertical-align: middle;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.9);
+}
