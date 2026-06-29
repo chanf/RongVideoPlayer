@@ -69,7 +69,22 @@ window.addEventListener('DOMContentLoaded', async () => {
 function setupEventListeners() {
   // Directory & UI
   btnOpenFolder.addEventListener('click', selectDirectory);
-  searchInput.addEventListener('input', handleSearch);
+  
+  // 支持中文输入法拼音输入合成优化
+  let isComposing = false;
+  searchInput.addEventListener('compositionstart', () => {
+    isComposing = true;
+  });
+  searchInput.addEventListener('compositionend', () => {
+    isComposing = false;
+    handleSearch();
+  });
+  searchInput.addEventListener('input', () => {
+    if (!isComposing) {
+      handleSearch();
+    }
+  });
+
   btnClearHistory.addEventListener('click', clearPlaybackHistory);
 
   const btnRefreshTree = document.getElementById('btn-refresh-tree');
@@ -663,7 +678,7 @@ function highlightActiveFileDOM(filePath) {
 
 // Tree Search / Filter
 function handleSearch() {
-  const query = searchInput.value.toLowerCase().trim();
+  const query = searchInput.value.toLowerCase().trim().normalize('NFC');
   const treeNodes = document.querySelectorAll('.tree-node');
 
   if (!query) {
@@ -698,7 +713,7 @@ function handleSearch() {
   // Walk and filter files
   treeNodes.forEach(node => {
     if (node.dataset.type === 'file') {
-      const name = node.querySelector('.tree-name').textContent.toLowerCase();
+      const name = node.querySelector('.tree-name').textContent.toLowerCase().normalize('NFC');
       const item = node.querySelector('.tree-item');
       if (name.includes(query)) {
         node.style.display = '';
