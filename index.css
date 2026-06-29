@@ -1811,24 +1811,27 @@ body[data-theme="ningzhi"] .modal-card {
   font-weight: normal;
 }
 
-.tree-completed-indicator {
+.tree-watch-dot {
   display: inline-block;
-  width: 6px;
-  height: 6px;
-  background-color: #10b981; /* Glowing emerald green */
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   margin-left: 6px;
+  margin-right: 2px;
   vertical-align: middle;
-  box-shadow: 0 0 6px rgba(16, 185, 129, 0.7);
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
 
-.title-completed-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  background-color: #10b981;
-  border-radius: 50%;
-  margin-left: 8px;
-  vertical-align: middle;
-  box-shadow: 0 0 8px rgba(16, 185, 129, 0.9);
+/* 未播放：红色的实心圆点，直径约等于一个汉字高度 */
+.tree-watch-dot.unplayed {
+  background-color: #ef4444; /* B站主题红 / 现代红色 */
+  border: none;
+  box-shadow: 0 0 5px rgba(239, 68, 68, 0.4);
+}
+
+/* 播放过且未完结：红色外圈，中间透明，外圈宽度 2px */
+.tree-watch-dot.partial {
+  background-color: transparent;
+  border: 2px solid #ef4444;
 }

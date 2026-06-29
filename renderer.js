@@ -471,21 +471,32 @@ function createTreeNodeDOM(node, depth = 0) {
   }
   itemDiv.appendChild(iconSpan);
 
+  // Prepend watch status dot for file items
+  let fileProgress = 0;
+  if (node.type === 'file') {
+    const historyItem = recentList.find(item => item.path === node.path);
+    const dotSpan = document.createElement('span');
+    dotSpan.className = 'tree-watch-dot';
+    
+    if (historyItem && historyItem.progress > 0) {
+      fileProgress = Math.round(historyItem.progress);
+      if (fileProgress < 95) {
+        dotSpan.classList.add('partial');
+        dotSpan.title = `已播 ${fileProgress}%`;
+        itemDiv.appendChild(dotSpan);
+      }
+    } else {
+      dotSpan.classList.add('unplayed');
+      dotSpan.title = '未播放';
+      itemDiv.appendChild(dotSpan);
+    }
+  }
+
   // Name
   const nameSpan = document.createElement('span');
   nameSpan.className = 'tree-name';
-  if (node.type === 'file') {
-    const historyItem = recentList.find(item => item.path === node.path);
-    if (historyItem && historyItem.progress > 0) {
-      const prog = Math.round(historyItem.progress);
-      if (prog >= 95) {
-        nameSpan.innerHTML = `${node.name} <span class="tree-completed-indicator" title="已播放完成"></span>`;
-      } else {
-        nameSpan.innerHTML = `${node.name} <span class="tree-file-progress">(${prog}%)</span>`;
-      }
-    } else {
-      nameSpan.textContent = node.name;
-    }
+  if (node.type === 'file' && fileProgress > 0 && fileProgress < 95) {
+    nameSpan.innerHTML = `${node.name} <span class="tree-file-progress">(${fileProgress}%)</span>`;
   } else {
     nameSpan.textContent = node.name;
   }
@@ -716,9 +727,7 @@ async function playVideo(filePath, startSec = 0, autoplay = true) {
     const baseName = path.basename(filePath);
     const existing = recentList.find(item => item.path === filePath);
     const prog = existing ? existing.progress : 0;
-    if (prog >= 95) {
-      videoTitle.innerHTML = `${baseName} <span class="title-completed-dot" title="播放完成"></span>`;
-    } else if (prog > 0) {
+    if (prog > 0 && prog < 95) {
       videoTitle.textContent = `${baseName} (${Math.round(prog)}%)`;
     } else {
       videoTitle.textContent = baseName;
@@ -811,9 +820,9 @@ function onVideoEnded() {
     renderDirectoryTree(currentDirectoryTree);
   }
   
-  // 播放器标题直接展示完成绿点
+  // 播放器标题重置为文件名即可，已播完视频不展示圆点
   const baseName = path.basename(currentFilePath);
-  videoTitle.innerHTML = `${baseName} <span class="title-completed-dot" title="播放完成"></span>`;
+  videoTitle.textContent = baseName;
 }
 
 function onVideoTimeUpdate() {
