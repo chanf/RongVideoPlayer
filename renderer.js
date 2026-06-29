@@ -4,6 +4,7 @@ const path = require('path');
 // State
 let currentDirectory = '';
 let currentDirectoryTree = null;
+let autoplayNext = true;
 let expandedFolders = new Set();
 let currentFilePath = '';
 let currentFileDuration = 0;
@@ -153,6 +154,28 @@ function setupEventListeners() {
     });
   });
 
+  // Autoplay Toggle
+  const btnAutoplay = document.getElementById('btn-autoplay');
+  const iconAutoplayOn = document.getElementById('icon-autoplay-on');
+  const iconAutoplayOff = document.getElementById('icon-autoplay-off');
+  if (btnAutoplay) {
+    btnAutoplay.addEventListener('click', () => {
+      autoplayNext = !autoplayNext;
+      if (autoplayNext) {
+        btnAutoplay.classList.add('active');
+        btnAutoplay.title = '自动连播: 已开启';
+        iconAutoplayOn.classList.remove('hidden');
+        iconAutoplayOff.classList.add('hidden');
+      } else {
+        btnAutoplay.classList.remove('active');
+        btnAutoplay.title = '自动连播: 已关闭';
+        iconAutoplayOn.classList.add('hidden');
+        iconAutoplayOff.classList.remove('hidden');
+      }
+      ipcRenderer.invoke('save-history', { autoplayNext });
+    });
+  }
+
   // Fullscreen
   btnFullscreen.addEventListener('click', toggleFullscreen);
 
@@ -212,6 +235,27 @@ async function loadHistoryAndResume() {
   // Restore Theme
   if (history.theme) {
     setTheme(history.theme);
+  }
+
+  // Restore Autoplay Toggle State
+  if (history.autoplayNext !== undefined) {
+    autoplayNext = history.autoplayNext;
+    const btnAutoplay = document.getElementById('btn-autoplay');
+    const iconAutoplayOn = document.getElementById('icon-autoplay-on');
+    const iconAutoplayOff = document.getElementById('icon-autoplay-off');
+    if (btnAutoplay) {
+      if (autoplayNext) {
+        btnAutoplay.classList.add('active');
+        btnAutoplay.title = '自动连播: 已开启';
+        iconAutoplayOn.classList.remove('hidden');
+        iconAutoplayOff.classList.add('hidden');
+      } else {
+        btnAutoplay.classList.remove('active');
+        btnAutoplay.title = '自动连播: 已关闭';
+        iconAutoplayOn.classList.add('hidden');
+        iconAutoplayOff.classList.remove('hidden');
+      }
+    }
   }
 
   // Restore last played file and progress
@@ -823,6 +867,28 @@ function onVideoEnded() {
   // 播放器标题重置为文件名即可，已播完视频不展示圆点
   const baseName = path.basename(currentFilePath);
   videoTitle.textContent = baseName;
+  
+  // 自动连播下一集
+  if (autoplayNext && currentDirectoryTree) {
+    const allFiles = flattenTreeFiles(currentDirectoryTree);
+    const currentIndex = allFiles.indexOf(currentFilePath);
+    if (currentIndex > -1 && currentIndex + 1 < allFiles.length) {
+      const nextFile = allFiles[currentIndex + 1];
+      console.log('自动连播下一集：', nextFile);
+      playVideo(nextFile, 0, true);
+    }
+  }
+}
+
+// 深度优先展平媒体树的所有文件节点，以获得与其在侧边栏显示次序完全一致的平铺文件列表
+function flattenTreeFiles(node, list = []) {
+  if (!node) return list;
+  if (node.type === 'file') {
+    list.push(node.path);
+  } else if (node.type === 'directory' && node.children) {
+    node.children.forEach(child => flattenTreeFiles(child, list));
+  }
+  return list;
 }
 
 function onVideoTimeUpdate() {
