@@ -458,7 +458,6 @@ function createTreeNodeDOM(node, depth = 0) {
         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
       </svg>
     `;
-    iconSpan.style.cursor = 'pointer';
   } else {
     iconSpan.innerHTML = `
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -473,9 +472,6 @@ function createTreeNodeDOM(node, depth = 0) {
   const nameSpan = document.createElement('span');
   nameSpan.className = 'tree-name';
   nameSpan.textContent = node.name;
-  if (node.type === 'directory') {
-    nameSpan.style.cursor = 'pointer';
-  }
   itemDiv.appendChild(nameSpan);
 
   // Hook up directory specific Finder open events and hover buttons
@@ -484,9 +480,6 @@ function createTreeNodeDOM(node, depth = 0) {
       e.stopPropagation();
       ipcRenderer.invoke('open-in-finder', node.path);
     };
-    
-    iconSpan.addEventListener('click', handleFinderOpen);
-    nameSpan.addEventListener('click', handleFinderOpen);
     
     // Add Finder hover button
     const revealBtn = document.createElement('button');
