@@ -5,7 +5,6 @@ const path = require('path');
 let currentDirectory = '';
 let currentDirectoryTree = null;
 let autoplayNext = true;
-let favoritesList = [];
 let expandedFolders = new Set();
 let currentFilePath = '';
 let currentFileDuration = 0;
@@ -192,27 +191,6 @@ function setupEventListeners() {
     });
   }
 
-  // Favorite Button
-  const btnFavorite = document.getElementById('btn-favorite');
-  if (btnFavorite) {
-    btnFavorite.addEventListener('click', toggleFavoriteCurrentVideo);
-  }
-
-  // Favorites Collapsible Header Toggle
-  const favoritesHeader = document.getElementById('favorites-header');
-  const favoritesListEl = document.getElementById('favorites-list');
-  const arrowFavorites = document.getElementById('arrow-favorites');
-  if (favoritesHeader && favoritesListEl && arrowFavorites) {
-    favoritesHeader.addEventListener('click', () => {
-      const isCollapsed = favoritesListEl.classList.toggle('collapsed');
-      if (isCollapsed) {
-        arrowFavorites.classList.remove('expanded');
-      } else {
-        arrowFavorites.classList.add('expanded');
-      }
-    });
-  }
-
   // Fullscreen
   btnFullscreen.addEventListener('click', toggleFullscreen);
 
@@ -274,11 +252,6 @@ async function loadHistoryAndResume() {
     setTheme(history.theme);
   }
 
-  // Restore Favorites
-  if (history.favoritesList) {
-    favoritesList = history.favoritesList;
-    renderFavoritesList();
-  }
 
   // Restore Autoplay Toggle State
   if (history.autoplayNext !== undefined) {
@@ -821,8 +794,6 @@ async function playVideo(filePath, startSec = 0, autoplay = true) {
     isTranscoding = meta.needsTranscode;
     transcodeStartTime = startSec;
 
-    // 更新收藏图标指示状态
-    updateFavoriteButtonUI();
 
     // UI Updates
     const baseName = path.basename(filePath);
@@ -1696,152 +1667,4 @@ async function clearCompletedTasksFromUI() {
   });
 }
 
-// -------------------------------------------------------------
-// -------------------------------------------------------------
-// -------------------------------------------------------------
-// 我的收藏管理逻辑 (Favorites Management Logic)
-// -------------------------------------------------------------
-function renderFavoritesList() {
-  console.log('renderFavoritesList called. Current list:', favoritesList);
-  const container = document.getElementById('favorites-list');
-  if (!container) {
-    console.error('CRITICAL: Element with ID "favorites-list" not found in DOM!');
-    return;
-  }
 
-  container.innerHTML = '';
-
-  if (!favoritesList || favoritesList.length === 0) {
-    console.log('favoritesList is empty, rendering placeholder');
-    container.innerHTML = '<div class="tree-placeholder" style="padding: 15px; font-size:11px;">无收藏记录</div>';
-    return;
-  }
-
-  console.log(`Appending ${favoritesList.length} favorite items to container`);
-  favoritesList.forEach((item, index) => {
-    try {
-      const div = document.createElement('div');
-      div.className = 'favorite-item';
-
-      // 收藏文件名称及图标容器
-      const infoDiv = document.createElement('div');
-      infoDiv.className = 'favorite-info';
-      infoDiv.title = item.name;
-      infoDiv.innerHTML = `
-        <svg class="favorite-star-icon" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" style="width: 12px; height: 12px;">
-          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-        </svg>
-        <span class="favorite-name">${item.name}</span>
-      `;
-
-      // 取消收藏删除按钮
-      const removeBtn = document.createElement('button');
-      removeBtn.className = 'btn-remove-favorite';
-      removeBtn.title = '取消收藏';
-      removeBtn.innerHTML = `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 12px; height: 12px;">
-          <polyline points="3 6 5 6 21 6"></polyline>
-          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-        </svg>
-      `;
-
-      // 动态添加事件，完全避免行内 onclick 字符串转义错误
-      removeBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        console.log('Remove button clicked for:', item.path);
-        removeFavoriteItem(item.path);
-      });
-
-      div.appendChild(infoDiv);
-      div.appendChild(removeBtn);
-
-      div.addEventListener('click', () => {
-        console.log('Favorite item clicked, playing:', item.path);
-        playVideo(item.path, 0, true);
-      });
-
-      container.appendChild(div);
-      console.log(`Rendered favorite item ${index + 1}/${favoritesList.length}: ${item.name}`);
-    } catch (err) {
-      console.error(`Error rendering favorite item at index ${index}:`, item, err);
-    }
-  });
-}
-
-function updateFavoriteButtonUI() {
-  const btnFavorite = document.getElementById('btn-favorite');
-  const iconFavHollow = document.getElementById('icon-fav-hollow');
-  const iconFavSolid = document.getElementById('icon-fav-solid');
-
-  if (!btnFavorite) {
-    console.warn('btn-favorite not found in DOM');
-    return;
-  }
-  if (!currentFilePath) {
-    iconFavHollow.classList.remove('hidden');
-    iconFavSolid.classList.add('hidden');
-    btnFavorite.title = '加入收藏';
-    return;
-  }
-
-  const isFavorited = favoritesList.some(item => item.path === currentFilePath);
-  console.log(`updateFavoriteButtonUI: currentFilePath=${currentFilePath}, isFavorited=${isFavorited}`);
-
-  if (isFavorited) {
-    iconFavHollow.classList.add('hidden');
-    iconFavSolid.classList.remove('hidden');
-    btnFavorite.title = '取消收藏';
-  } else {
-    iconFavHollow.classList.remove('hidden');
-    iconFavSolid.classList.add('hidden');
-    btnFavorite.title = '加入收藏';
-  }
-}
-
-function toggleFavoriteCurrentVideo() {
-  console.log('toggleFavoriteCurrentVideo clicked. currentFilePath:', currentFilePath);
-  if (!currentFilePath) {
-    alert('当前没有播放任何视频，无法收藏！');
-    return;
-  }
-
-  const existingIdx = favoritesList.findIndex(item => item.path === currentFilePath);
-  console.log('existingIdx in list:', existingIdx);
-
-  if (existingIdx > -1) {
-    favoritesList.splice(existingIdx, 1);
-    console.log('Removed from favorites. New count:', favoritesList.length);
-  } else {
-    const filename = path.basename(currentFilePath);
-    favoritesList.push({
-      name: filename,
-      path: currentFilePath,
-      timestamp: Date.now()
-    });
-    console.log('Added to favorites:', filename, 'New count:', favoritesList.length);
-  }
-
-  updateFavoriteButtonUI();
-  renderFavoritesList();
-  ipcRenderer.invoke('save-history', { favoritesList });
-}
-
-function removeFavoriteItem(filePath) {
-  console.log('removeFavoriteItem called for:', filePath);
-  const existingIdx = favoritesList.findIndex(item => item.path === filePath);
-  if (existingIdx > -1) {
-    favoritesList.splice(existingIdx, 1);
-    console.log('Removed. New count:', favoritesList.length);
-    updateFavoriteButtonUI();
-    renderFavoritesList();
-    ipcRenderer.invoke('save-history', { favoritesList });
-  } else {
-    console.warn('filePath not found in favoritesList for removal:', filePath);
-  }
-}
-
-// 兼容可能存在的旧版行内 onclick 属性暴露
-window.removeFavoriteItem = (e, filePath) => {
-  if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
-  removeFavoriteItem(filePath);
-};
