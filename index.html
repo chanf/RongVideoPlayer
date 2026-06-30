@@ -969,16 +969,28 @@
 
         <!-- Note Editor View (when editing a note) -->
         <div class="note-editor-view hidden" id="note-editor-view">
-          <div class="editor-header">
-            <button id="btn-close-editor" class="btn-secondary" style="padding: 6px 12px; font-size: 12px; border-radius: 6px; cursor: pointer;">
-              返回列表
-            </button>
-            <div class="editor-meta-info" style="display: flex; gap: 12px; align-items: center;">
-              <select id="note-category-select" class="dropdown-select" style="min-width: 120px; padding: 4px 8px; font-size: 12px;"></select>
+          <div class="editor-title-row" style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; border-bottom: 1px solid var(--border-color); box-sizing: border-box; background: var(--bg-panel); flex-shrink: 0; min-height: 52px;">
+            <!-- Left: Back button and Title -->
+            <div style="display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;">
+              <button id="btn-close-editor" class="btn-secondary" style="padding: 4px 8px; display: flex; align-items: center; justify-content: center; border-radius: 6px; cursor: pointer; height: 32px; border: 1px solid var(--border-color); background: rgba(255,255,255,0.03); color: var(--text-main);" title="返回列表">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width: 14px; height: 14px; margin-right: 4px;">
+                  <polyline points="15 18 9 12 15 6"></polyline>
+                </svg>
+                返回
+              </button>
+              <input type="text" id="note-title-input" placeholder="输入笔记标题..." style="flex: 1; font-size: 16px; font-weight: 600; border: none; background: transparent; color: var(--text-main); outline: none;">
+              <h2 id="note-title-display" style="margin: 0; font-size: 16px; font-weight: 600; color: var(--text-main); display: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;"></h2>
+            </div>
+
+            <!-- Middle: Categories and Video Associations -->
+            <div class="editor-meta-info" style="display: flex; gap: 8px; align-items: center; flex-shrink: 0;">
+              <select id="note-category-select" class="dropdown-select" style="min-width: 100px; padding: 4px 8px; font-size: 12px;"></select>
               <span id="note-association-status" class="note-association-tag">未关联视频</span>
               <button id="btn-toggle-associate" class="btn-secondary" style="padding: 4px 8px; font-size: 11px; border-radius: 4px; cursor: pointer; white-space: nowrap;">关联当前视频</button>
             </div>
-            <div style="margin-left: auto; display: flex; gap: 8px;">
+
+            <!-- Right: Actions -->
+            <div class="editor-actions" style="display: flex; gap: 8px; align-items: center; flex-shrink: 0;">
               <button id="btn-edit-note" class="btn-primary" style="padding: 6px 12px; font-size: 12px; border-radius: 6px; cursor: pointer;">
                 编辑笔记
               </button>
@@ -997,11 +1009,6 @@
                 删除
               </button>
             </div>
-          </div>
-
-          <div class="editor-title-row">
-            <input type="text" id="note-title-input" placeholder="输入笔记标题...">
-            <h2 id="note-title-display" style="margin: 0; font-size: 18px; font-weight: 600; color: var(--text-main); display: none;"></h2>
           </div>
 
           <div class="editor-workspace">

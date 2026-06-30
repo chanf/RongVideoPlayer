@@ -4479,7 +4479,7 @@ function initNotesFeature() {
     const editorMetaInfo = document.querySelector('.editor-meta-info');
 
     if (isMaterial) {
-      if (editorTitleRow) editorTitleRow.classList.add('hidden');
+      if (editorTitleRow) editorTitleRow.classList.remove('hidden');
       if (editorMetaInfo) editorMetaInfo.classList.add('hidden');
       if (btnEditNote) btnEditNote.classList.add('hidden');
       if (btnInsertScreenshot) btnInsertScreenshot.classList.add('hidden');
@@ -4487,6 +4487,8 @@ function initNotesFeature() {
       if (btnToggleAssociate) btnToggleAssociate.classList.add('hidden');
       if (noteCategorySelect) noteCategorySelect.disabled = true;
       
+      if (noteTitleInput) noteTitleInput.classList.add('hidden');
+      if (noteTitleDisplay) noteTitleDisplay.style.display = 'none';
       if (editorLeftPane) editorLeftPane.classList.add('hidden');
       if (markdownPreviewHeader) markdownPreviewHeader.classList.add('hidden');
       return;
