@@ -70,13 +70,47 @@ const screenshotsView = document.getElementById('screenshots-view');
 
 // Initialization
 window.addEventListener('DOMContentLoaded', async () => {
-  setupEventListeners();
-  await loadHistoryAndResume();
-  initBilibiliDownloader();
-  initOnlineCommunity();
-  initScreenshotsLibrary();
-  initSettings();
-  initNotesFeature();
+  try {
+    setupEventListeners();
+  } catch (e) {
+    console.error("Error in setupEventListeners:", e);
+  }
+
+  try {
+    await loadHistoryAndResume();
+  } catch (e) {
+    console.error("Error in loadHistoryAndResume:", e);
+  }
+
+  try {
+    initBilibiliDownloader();
+  } catch (e) {
+    console.error("Error in initBilibiliDownloader:", e);
+  }
+
+  try {
+    initOnlineCommunity();
+  } catch (e) {
+    console.error("Error in initOnlineCommunity:", e);
+  }
+
+  try {
+    initScreenshotsLibrary();
+  } catch (e) {
+    console.error("Error in initScreenshotsLibrary:", e);
+  }
+
+  try {
+    initSettings();
+  } catch (e) {
+    console.error("Error in initSettings:", e);
+  }
+
+  try {
+    initNotesFeature();
+  } catch (e) {
+    console.error("Error in initNotesFeature:", e);
+  }
 });
 
 // Event Listeners Setup

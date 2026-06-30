@@ -1160,9 +1160,26 @@
     </div>
   </div>
 
+  <!-- Temporarily override Node globals to allow browser CDN scripts to load globally -->
+  <script>
+    if (typeof module === 'object') {
+      window.nodeModule = module;
+      module = undefined;
+    }
+  </script>
+
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10.2.4/dist/mermaid.min.js"></script>
+
+  <!-- Restore Node globals for renderer.js -->
+  <script>
+    if (window.nodeModule) {
+      module = window.nodeModule;
+      window.nodeModule = undefined;
+    }
+  </script>
+
   <script src="renderer.js"></script>
 </body>
 </html>
