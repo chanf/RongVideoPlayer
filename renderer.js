@@ -1900,6 +1900,32 @@ function updateSavePathLabel() {
   if (lblSavePath) {
     lblSavePath.textContent = currentDirectory ? currentDirectory : '系统下载目录';
   }
+  updateSubfolderList();
+}
+
+async function updateSubfolderList() {
+  const select = document.getElementById('bili-subfolder-select');
+  if (!select) return;
+  
+  // Clear options but keep the default one
+  select.innerHTML = '<option value="">-- 直接下载到根目录 --</option>';
+  
+  const customPath = localStorage.getItem('rong_setting_download_path') || null;
+  const baseDir = currentDirectory || customPath;
+  
+  try {
+    const subdirs = await ipcRenderer.invoke('list-subdirectories', baseDir);
+    if (subdirs && subdirs.length > 0) {
+      subdirs.forEach(dir => {
+        const opt = document.createElement('option');
+        opt.value = dir;
+        opt.textContent = dir;
+        select.appendChild(opt);
+      });
+    }
+  } catch (e) {
+    console.error('Failed to update subfolder list:', e);
+  }
 }
 
 async function parseBiliUrl() {
@@ -1992,10 +2018,14 @@ async function startBiliDownload() {
   resultsSection.classList.add('hidden'); // hide workbench select
   
   const customPath = localStorage.getItem('rong_setting_download_path') || null;
+  const subfolderSelect = document.getElementById('bili-subfolder-select');
+  const subFolder = subfolderSelect ? subfolderSelect.value : '';
+
   await ipcRenderer.invoke('bili-start-download', {
     episodes: episodesToDownload,
     quality: quality,
     savePath: currentDirectory || customPath,
+    subFolder: subFolder,
     collectionTitle: parsedCollectionTitle,
     collectionType: parsedCollectionType
   });

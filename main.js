@@ -940,8 +940,26 @@ ipcMain.handle('bili-parse-url', async (event, url) => {
   }
 });
 
-ipcMain.handle('bili-start-download', async (event, { episodes, quality, savePath, collectionTitle, collectionType }) => {
+ipcMain.handle('list-subdirectories', async (event, dirPath) => {
+  try {
+    const targetPath = dirPath || app.getPath('downloads');
+    if (fs.existsSync(targetPath)) {
+      const files = fs.readdirSync(targetPath, { withFileTypes: true });
+      return files
+        .filter(dirent => dirent.isDirectory() && !dirent.name.startsWith('.'))
+        .map(dirent => dirent.name);
+    }
+  } catch (err) {
+    console.error('Failed to list subdirectories:', err);
+  }
+  return [];
+});
+
+ipcMain.handle('bili-start-download', async (event, { episodes, quality, savePath, subFolder, collectionTitle, collectionType }) => {
   let baseSavePath = savePath || app.getPath('downloads');
+  if (subFolder) {
+    baseSavePath = path.join(baseSavePath, subFolder);
+  }
   let targetSavePath = baseSavePath;
   
   // 如果是分P视频或合集系列，专门为其建立同名子目录，实现归档分类
