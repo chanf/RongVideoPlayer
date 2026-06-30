@@ -4615,6 +4615,12 @@ function initNotesFeature() {
         
         if (extLower === '.md' || extLower === '.txt') {
           noteContent = material.text || '';
+        } else if (extLower === '.pdf') {
+          const streamUrl = `http://localhost:30032/screenshot?path=${encodeURIComponent(material.absolutePath)}`;
+          noteContent = `### 📄 PDF 资料：${material.name}\n\n`;
+          noteContent += `<div class="pdf-container" style="width:100%; height:650px; border:1px solid var(--border-color); border-radius:8px; overflow:hidden; background:rgba(0,0,0,0.2); margin: 16px 0;">\n`;
+          noteContent += `  <iframe src="${streamUrl}" style="width:100%; height:100%; border:none;"></iframe>\n`;
+          noteContent += `</div>\n`;
         } else if (['.png', '.jpg', '.jpeg'].includes(extLower)) {
           const streamUrl = `http://localhost:30032/screenshot?path=${encodeURIComponent(material.absolutePath)}`;
           noteContent = `\n![${material.name}](${streamUrl})\n`;

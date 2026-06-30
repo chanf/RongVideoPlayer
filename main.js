@@ -106,11 +106,20 @@ function startVideoServer() {
     if (urlObj.pathname === '/screenshot') {
       const imgPath = urlObj.searchParams.get('path');
       if (imgPath && fs.existsSync(imgPath)) {
-        res.writeHead(200, { 'Content-Type': 'image/png' });
+        const ext = path.extname(imgPath).toLowerCase();
+        let contentType = 'image/png';
+        if (ext === '.pdf') {
+          contentType = 'application/pdf';
+        } else if (ext === '.jpg' || ext === '.jpeg') {
+          contentType = 'image/jpeg';
+        } else if (ext === '.txt') {
+          contentType = 'text/plain; charset=utf-8';
+        }
+        res.writeHead(200, { 'Content-Type': contentType });
         fs.createReadStream(imgPath).pipe(res);
       } else {
         res.writeHead(404, { 'Content-Type': 'text/plain' });
-        res.end('Image not found.');
+        res.end('File not found.');
       }
     } else if (urlObj.pathname === '/video') {
       const filePath = urlObj.searchParams.get('path');
