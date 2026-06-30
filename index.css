@@ -620,7 +620,7 @@ body[data-theme="ningzhi"] .btn-delete-recent:hover {
 /* Right Player Container */
 .player-container {
   flex: 1;
-  background-color: #000;
+  background-color: var(--bg-main);
   position: relative;
   display: flex;
   align-items: center;
