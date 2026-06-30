@@ -4408,6 +4408,40 @@ function initNotesFeature() {
       const card = document.createElement('div');
       card.className = 'note-card';
       
+      // Extract image URL from note content if exists
+      let imageUrl = null;
+      if (note.content) {
+        const match = note.content.match(/!\[.*?\]\((.*?)\)/);
+        if (match && match[1]) {
+          imageUrl = match[1];
+        } else {
+          const imgMatch = note.content.match(/<img.*?src=["'](.*?)["']/);
+          if (imgMatch && imgMatch[1]) {
+            imageUrl = imgMatch[1];
+          }
+        }
+      }
+
+      if (imageUrl) {
+        const thumbContainer = document.createElement('div');
+        thumbContainer.className = 'note-card-thumbnail';
+        thumbContainer.style.cssText = 'width: 100%; height: 120px; overflow: hidden; border-radius: 6px; background: rgba(0,0,0,0.15); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; position: relative;';
+        
+        const img = document.createElement('img');
+        img.src = imageUrl;
+        img.style.cssText = 'width: 100%; height: 100%; object-fit: cover; transition: transform 0.3s ease;';
+        thumbContainer.appendChild(img);
+        
+        card.addEventListener('mouseenter', () => {
+          img.style.transform = 'scale(1.05)';
+        });
+        card.addEventListener('mouseleave', () => {
+          img.style.transform = 'scale(1)';
+        });
+        
+        card.appendChild(thumbContainer);
+      }
+
       const title = document.createElement('h3');
       title.textContent = note.title || '无标题笔记';
       card.appendChild(title);
@@ -4688,6 +4722,14 @@ function initNotesFeature() {
           createdAt: Date.now(),
           updatedAt: Date.now()
         };
+
+        // Add to database immediately since there is no "Save" button for materials
+        notesDB.notes.push(newNote);
+        await ipcRenderer.invoke('save-notes-db', notesDB);
+
+        // Update list and reload grid
+        renderSidebarFilters();
+        renderNotesGrid();
 
         // Open in View Mode so they can see and click the attachment card!
         openNoteInEditor(newNote, false);
