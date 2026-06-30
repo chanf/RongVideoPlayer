@@ -18,6 +18,8 @@
   --bg-overlay-bottom: rgba(15, 23, 42, 0.85);
   --text-controls: #ffffff;
   --accent-hover: #2563eb;
+  --bg-notes-title: #080b12;
+  --bg-notes-body: #111622;
 }
 
 /* ========================================================
@@ -41,6 +43,8 @@ body[data-theme="zhucui"] {
   --bg-overlay-bottom: rgba(10, 26, 20, 0.85);
   --text-controls: #ffffff;
   --accent-hover: #059669;
+  --bg-notes-title: #040c0a;
+  --bg-notes-body: #0a1b15;
 }
 
 /* 缃叶黄 (xiangye) - 缃帙秋叶 */
@@ -60,6 +64,8 @@ body[data-theme="xiangye"] {
   --bg-overlay-bottom: rgba(26, 18, 10, 0.85);
   --text-controls: #ffffff;
   --accent-hover: #b45309;
+  --bg-notes-title: #0e0a04;
+  --bg-notes-body: #1b130a;
 }
 
 /* 黛墨黑 (daimo) - 徽水泼墨 */
@@ -79,6 +85,8 @@ body[data-theme="daimo"] {
   --bg-overlay-bottom: rgba(15, 15, 15, 0.85);
   --text-controls: #ffffff;
   --accent-hover: #71717a;
+  --bg-notes-title: #030303;
+  --bg-notes-body: #111111;
 }
 
 /* 凝脂白 (ningzhi) - 温润如玉 (Light Theme) */
@@ -98,6 +106,8 @@ body[data-theme="ningzhi"] {
   --bg-overlay-bottom: rgba(238, 236, 227, 0.9);
   --text-controls: #1c1c1a;
   --accent-hover: #a83a0a;
+  --bg-notes-title: #eae9e2;
+  --bg-notes-body: #ffffff;
 }
 
 /* 浅色主题专项适配 overrides */
@@ -3342,7 +3352,7 @@ body[data-theme="ningzhi"] .tree-cat-badge.inherited {
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
-  background: var(--bg-main);
+  background: var(--bg-notes-body);
 }
 .editor-left-pane textarea {
   flex: 1;
@@ -3363,7 +3373,7 @@ body[data-theme="ningzhi"] .tree-cat-badge.inherited {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: rgba(0,0,0,0.08);
+  background: var(--bg-notes-body);
   overflow: hidden;
 }
 .markdown-preview-header {
