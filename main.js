@@ -1229,6 +1229,43 @@ ipcMain.handle('copy-image-to-clipboard', async (event, absolutePath) => {
   return false;
 });
 
+// ==========================================
+// 学习笔记数据管理 (Notes Management DB)
+// ==========================================
+const NOTES_DB_FILE = path.join(app.getPath('userData'), 'notes-db.json');
+
+function getNotesDB() {
+  if (fs.existsSync(NOTES_DB_FILE)) {
+    try {
+      return JSON.parse(fs.readFileSync(NOTES_DB_FILE, 'utf8'));
+    } catch (e) {
+      console.error('Failed to parse notes db:', e);
+    }
+  }
+  return {
+    notes: []
+  };
+}
+
+function saveNotesDB(db) {
+  try {
+    fs.mkdirSync(path.dirname(NOTES_DB_FILE), { recursive: true });
+    fs.writeFileSync(NOTES_DB_FILE, JSON.stringify(db, null, 2), 'utf8');
+    return true;
+  } catch (e) {
+    console.error('Failed to save notes db:', e);
+    return false;
+  }
+}
+
+ipcMain.handle('get-notes-db', () => {
+  return getNotesDB();
+});
+
+ipcMain.handle('save-notes-db', (event, db) => {
+  return saveNotesDB(db);
+});
+
 // App Lifecycle
 app.whenReady().then(() => {
   startVideoServer();

@@ -76,6 +76,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   initOnlineCommunity();
   initScreenshotsLibrary();
   initSettings();
+  initNotesFeature();
 });
 
 // Event Listeners Setup
@@ -4078,6 +4079,700 @@ function initSettings() {
       settingsView.classList.add('hidden');
       playerContainer.classList.remove('hidden');
     });
+  }
+}
+
+// ========================================================
+// 学习笔记功能前端逻辑 (Notes Feature Frontend Logic)
+// ========================================================
+let notesDB = { notes: [] };
+let currentEditingNote = null;
+let selectedNoteCategory = 'all';
+let selectedNoteVideo = 'all'; // 'all', 'standalone', or specific video path
+let notesSearchQuery = '';
+
+// Initialize notes
+function initNotesFeature() {
+  const btnToggleNotes = document.getElementById('btn-toggle-notes');
+  const btnNotesBackToPlayer = document.getElementById('btn-notes-back-to-player');
+  const notesView = document.getElementById('notes-view');
+  const playerContainer = document.getElementById('player-container');
+  
+  const downloaderView = document.getElementById('downloader-view');
+  const communityView = document.getElementById('community-view');
+  const screenshotsView = document.getElementById('screenshots-view');
+  const settingsView = document.getElementById('settings-view');
+  
+  const btnToggleDownloader = document.getElementById('btn-toggle-downloader');
+  const btnToggleCommunity = document.getElementById('btn-toggle-community');
+  const btnToggleScreenshots = document.getElementById('btn-toggle-screenshots');
+  const btnToggleSettings = document.getElementById('btn-toggle-settings');
+
+  // DOM Notes elements
+  const btnAddNote = document.getElementById('btn-add-note');
+  const notesSearchInput = document.getElementById('notes-search-input');
+  const notesCategoriesList = document.getElementById('notes-categories-list');
+  const notesVideosList = document.getElementById('notes-videos-list');
+  const notesGridView = document.getElementById('notes-grid-view');
+  const notesGrid = document.getElementById('notes-grid');
+  
+  // Editor elements
+  const noteEditorView = document.getElementById('note-editor-view');
+  const btnCloseEditor = document.getElementById('btn-close-editor');
+  const noteCategorySelect = document.getElementById('note-category-select');
+  const noteAssociationStatus = document.getElementById('note-association-status');
+  const btnToggleAssociate = document.getElementById('btn-toggle-associate');
+  const btnInsertScreenshot = document.getElementById('btn-insert-screenshot');
+  const btnSaveNote = document.getElementById('btn-save-note');
+  const btnDeleteNote = document.getElementById('btn-delete-note');
+  const noteTitleInput = document.getElementById('note-title-input');
+  const noteContentInput = document.getElementById('note-content-input');
+  const notePreviewContent = document.getElementById('note-preview-content');
+
+  // Insert Screenshot Modal Elements
+  const insertScreenshotModal = document.getElementById('insert-screenshot-modal');
+  const btnCloseInsertShotModal = document.getElementById('btn-close-insert-shot-modal');
+  const btnCancelInsertShot = document.getElementById('btn-cancel-insert-shot');
+  const btnConfirmInsertShot = document.getElementById('btn-confirm-insert-shot');
+  const insertShotCatSelect = document.getElementById('insert-shot-cat-select');
+  const insertShotSearch = document.getElementById('insert-shot-search');
+  const insertShotGrid = document.getElementById('insert-shot-grid');
+
+  // Setup Mermaid
+  if (typeof mermaid !== 'undefined') {
+    mermaid.initialize({ startOnLoad: false, theme: 'dark' });
+  }
+
+  // Toggle View
+  if (btnToggleNotes && notesView) {
+    btnToggleNotes.addEventListener('click', async () => {
+      // Toggle active states
+      btnToggleNotes.classList.add('active');
+      if (btnToggleDownloader) btnToggleDownloader.classList.remove('active');
+      if (btnToggleCommunity) btnToggleCommunity.classList.remove('active');
+      if (btnToggleScreenshots) btnToggleScreenshots.classList.remove('active');
+      if (btnToggleSettings) btnToggleSettings.classList.remove('active');
+
+      playerContainer.classList.add('hidden');
+      if (downloaderView) downloaderView.classList.add('hidden');
+      if (communityView) communityView.classList.add('hidden');
+      if (screenshotsView) screenshotsView.classList.add('hidden');
+      if (settingsView) settingsView.classList.add('hidden');
+      notesView.classList.remove('hidden');
+
+      videoElement.pause();
+      
+      // Close editor and load notes list
+      closeEditor();
+      await loadAndRenderNotes();
+    });
+  }
+
+  if (btnNotesBackToPlayer && notesView) {
+    btnNotesBackToPlayer.addEventListener('click', () => {
+      btnToggleNotes.classList.remove('active');
+      notesView.classList.add('hidden');
+      playerContainer.classList.remove('hidden');
+    });
+  }
+
+  // Hook up other tab toggles to deactivate notes
+  const otherToggles = [btnToggleDownloader, btnToggleCommunity, btnToggleScreenshots, btnToggleSettings];
+  otherToggles.forEach(toggle => {
+    if (toggle) {
+      toggle.addEventListener('click', () => {
+        if (btnToggleNotes) btnToggleNotes.classList.remove('active');
+        if (notesView) notesView.classList.add('hidden');
+      });
+    }
+  });
+
+  // Load and Render Notes
+  async function loadAndRenderNotes() {
+    // 1. Fetch notes DB
+    notesDB = await ipcRenderer.invoke('get-notes-db');
+    // Ensure screenshots DB is loaded for category names
+    screenshotsDB = await ipcRenderer.invoke('get-screenshots-db');
+    
+    // 2. Render filters sidebar
+    renderSidebarFilters();
+    
+    // 3. Render grid list
+    renderNotesGrid();
+  }
+
+  // Render Sidebar Filters
+  function renderSidebarFilters() {
+    if (!notesCategoriesList || !notesVideosList) return;
+    
+    // Render Categories
+    notesCategoriesList.innerHTML = '';
+    
+    // Total notes count
+    const totalCount = notesDB.notes.length;
+    const allCatItem = document.createElement('div');
+    allCatItem.className = `notes-sidebar-item ${selectedNoteCategory === 'all' ? 'active' : ''}`;
+    allCatItem.innerHTML = `<span>📂 所有笔记</span> <span style="font-size:11px; opacity:0.7;">(${totalCount})</span>`;
+    allCatItem.addEventListener('click', () => {
+      selectedNoteCategory = 'all';
+      renderSidebarFilters();
+      renderNotesGrid();
+    });
+    notesCategoriesList.appendChild(allCatItem);
+
+    // Uncategorized count
+    const uncatCount = notesDB.notes.filter(n => !n.categoryId || n.categoryId === 'uncategorized').length;
+    const uncatItem = document.createElement('div');
+    uncatItem.className = `notes-sidebar-item ${selectedNoteCategory === 'uncategorized' ? 'active' : ''}`;
+    uncatItem.innerHTML = `<span>📁 未分类</span> <span style="font-size:11px; opacity:0.7;">(${uncatCount})</span>`;
+    uncatItem.addEventListener('click', () => {
+      selectedNoteCategory = 'uncategorized';
+      renderSidebarFilters();
+      renderNotesGrid();
+    });
+    notesCategoriesList.appendChild(uncatItem);
+
+    // Custom categories
+    if (screenshotsDB && screenshotsDB.categories) {
+      screenshotsDB.categories.forEach(cat => {
+        if (cat.id === 'uncategorized') return;
+        const count = notesDB.notes.filter(n => n.categoryId === cat.id).length;
+        
+        const catItem = document.createElement('div');
+        catItem.className = `notes-sidebar-item ${selectedNoteCategory === cat.id ? 'active' : ''}`;
+        catItem.innerHTML = `<span>📁 ${cat.name}</span> <span style="font-size:11px; opacity:0.7;">(${count})</span>`;
+        catItem.addEventListener('click', () => {
+          selectedNoteCategory = cat.id;
+          renderSidebarFilters();
+          renderNotesGrid();
+        });
+        notesCategoriesList.appendChild(catItem);
+      });
+    }
+
+    // Render Video Associations
+    notesVideosList.innerHTML = '';
+    
+    // All videos option
+    const allVidItem = document.createElement('div');
+    allVidItem.className = `notes-sidebar-item ${selectedNoteVideo === 'all' ? 'active' : ''}`;
+    allVidItem.textContent = '🎬 全部关联';
+    allVidItem.addEventListener('click', () => {
+      selectedNoteVideo = 'all';
+      renderSidebarFilters();
+      renderNotesGrid();
+    });
+    notesVideosList.appendChild(allVidItem);
+
+    // Standalone notes option
+    const standaloneCount = notesDB.notes.filter(n => !n.videoPath).length;
+    const standaloneItem = document.createElement('div');
+    standaloneItem.className = `notes-sidebar-item ${selectedNoteVideo === 'standalone' ? 'active' : ''}`;
+    standaloneItem.innerHTML = `<span>📝 独立笔记</span> <span style="font-size:11px; opacity:0.7;">(${standaloneCount})</span>`;
+    standaloneItem.addEventListener('click', () => {
+      selectedNoteVideo = 'standalone';
+      renderSidebarFilters();
+      renderNotesGrid();
+    });
+    notesVideosList.appendChild(standaloneItem);
+
+    // Associated videos
+    const videoPaths = new Set();
+    const videoMap = new Map(); // { path: name }
+    notesDB.notes.forEach(n => {
+      if (n.videoPath) {
+        videoPaths.add(n.videoPath);
+        videoMap.set(n.videoPath, n.videoName);
+      }
+    });
+
+    videoPaths.forEach(vPath => {
+      const vName = videoMap.get(vPath) || path.basename(vPath);
+      const count = notesDB.notes.filter(n => n.videoPath === vPath).length;
+      
+      const vidItem = document.createElement('div');
+      vidItem.className = `notes-sidebar-item ${selectedNoteVideo === vPath ? 'active' : ''}`;
+      vidItem.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:8px;';
+      vidItem.innerHTML = `
+        <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px;" title="${vName}">🎥 ${vName}</span>
+        <span style="font-size:11px; opacity:0.7; flex-shrink:0;">(${count})</span>
+      `;
+      vidItem.addEventListener('click', () => {
+        selectedNoteVideo = vPath;
+        renderSidebarFilters();
+        renderNotesGrid();
+      });
+      notesVideosList.appendChild(vidItem);
+    });
+  }
+
+  // Render Notes Grid
+  function renderNotesGrid() {
+    if (!notesGrid) return;
+    notesGrid.innerHTML = '';
+    
+    // Filter
+    let filtered = notesDB.notes;
+    
+    // Category filter
+    if (selectedNoteCategory !== 'all') {
+      if (selectedNoteCategory === 'uncategorized') {
+        filtered = filtered.filter(n => !n.categoryId || n.categoryId === 'uncategorized');
+      } else {
+        filtered = filtered.filter(n => n.categoryId === selectedNoteCategory);
+      }
+    }
+    
+    // Video association filter
+    if (selectedNoteVideo !== 'all') {
+      if (selectedNoteVideo === 'standalone') {
+        filtered = filtered.filter(n => !n.videoPath);
+      } else {
+        filtered = filtered.filter(n => n.videoPath === selectedNoteVideo);
+      }
+    }
+    
+    // Global search filter
+    if (notesSearchQuery) {
+      const q = notesSearchQuery.toLowerCase();
+      filtered = filtered.filter(n => 
+        (n.title && n.title.toLowerCase().includes(q)) || 
+        (n.content && n.content.toLowerCase().includes(q))
+      );
+    }
+    
+    if (filtered.length === 0) {
+      notesGrid.innerHTML = `
+        <div style="grid-column: 1/-1; text-align:center; padding: 60px 20px; color: var(--text-muted);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:48px; height:48px; opacity:0.5; margin-bottom:12px;">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+          </svg>
+          <p style="margin:0; font-size:14px;">没有找到符合条件的笔记</p>
+          <span style="font-size:12px; opacity:0.7;">点击右上角“新建笔记”开始记录学习灵感！</span>
+        </div>
+      `;
+      return;
+    }
+    
+    filtered.forEach(note => {
+      const card = document.createElement('div');
+      card.className = 'note-card';
+      
+      const title = document.createElement('h3');
+      title.textContent = note.title || '无标题笔记';
+      card.appendChild(title);
+      
+      // Excerpt (strip markdown syntax briefly for preview)
+      const excerpt = document.createElement('div');
+      excerpt.className = 'note-card-excerpt';
+      excerpt.textContent = note.content ? note.content.replace(/[#*`~$\-[\]()]/g, '').trim() : '暂无内容';
+      card.appendChild(excerpt);
+      
+      // Meta row
+      const meta = document.createElement('div');
+      meta.className = 'note-card-meta';
+      
+      const cat = screenshotsDB.categories.find(c => c.id === (note.categoryId || 'uncategorized'));
+      const catName = cat ? cat.name : '未分类';
+      const catTag = document.createElement('span');
+      catTag.style.cssText = 'background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border-color);';
+      catTag.textContent = catName;
+      meta.appendChild(catTag);
+      
+      if (note.videoName) {
+        const vidTag = document.createElement('span');
+        vidTag.style.cssText = 'color: #3b82f6; max-width: 120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+        vidTag.textContent = `🎥 ${note.videoName}`;
+        vidTag.title = note.videoName;
+        meta.appendChild(vidTag);
+      } else {
+        const standaloneTag = document.createElement('span');
+        standaloneTag.textContent = '📝 独立笔记';
+        meta.appendChild(standaloneTag);
+      }
+      
+      card.appendChild(meta);
+      
+      card.addEventListener('click', () => {
+        openNoteInEditor(note);
+      });
+      
+      notesGrid.appendChild(card);
+    });
+  }
+
+  // Open Note in Editor
+  function openNoteInEditor(note) {
+    currentEditingNote = note;
+    
+    // Toggle panels
+    notesGridView.classList.add('hidden');
+    noteEditorView.classList.remove('hidden');
+    
+    // Fill fields
+    noteTitleInput.value = note.title || '';
+    noteContentInput.value = note.content || '';
+    
+    // Populate Category dropdown
+    noteCategorySelect.innerHTML = '';
+    if (screenshotsDB && screenshotsDB.categories) {
+      screenshotsDB.categories.forEach(cat => {
+        const opt = document.createElement('option');
+        opt.value = cat.id;
+        opt.textContent = cat.name;
+        if (cat.id === (note.categoryId || 'uncategorized')) {
+          opt.selected = true;
+        }
+        noteCategorySelect.appendChild(opt);
+      });
+    }
+
+    updateEditorAssociationUI();
+    renderPreview();
+  }
+
+  // Update editor association status UI
+  function updateEditorAssociationUI() {
+    if (!currentEditingNote) return;
+    
+    if (currentEditingNote.videoPath) {
+      noteAssociationStatus.textContent = `关联: ${currentEditingNote.videoName}`;
+      noteAssociationStatus.title = currentEditingNote.videoPath;
+      noteAssociationStatus.style.cssText = 'background: rgba(59, 130, 246, 0.1); color: #3b82f6; border-color: rgba(59,130,246,0.2); cursor: pointer;';
+      btnToggleAssociate.textContent = '取消关联';
+      btnToggleAssociate.style.color = '#ef4444';
+      
+      // Clicking the associated tag starts playing the video!
+      noteAssociationStatus.onclick = () => {
+        if (confirm(`是否开始播放关联的视频 "${currentEditingNote.videoName}"？`)) {
+          btnNotesBackToPlayer.click();
+          playVideo(currentEditingNote.videoPath, 0, true);
+        }
+      };
+    } else {
+      noteAssociationStatus.textContent = '独立笔记';
+      noteAssociationStatus.title = '';
+      noteAssociationStatus.style.cssText = 'background: rgba(255,255,255,0.05); color: var(--text-muted); border-color: var(--border-color); cursor: default;';
+      noteAssociationStatus.onclick = null;
+      btnToggleAssociate.textContent = currentFilePath ? '关联当前视频' : '未播放视频';
+      btnToggleAssociate.style.color = '';
+    }
+  }
+
+  // Toggle video association
+  if (btnToggleAssociate) {
+    btnToggleAssociate.addEventListener('click', () => {
+      if (!currentEditingNote) return;
+      
+      if (currentEditingNote.videoPath) {
+        // Clear association
+        currentEditingNote.videoPath = null;
+        currentEditingNote.videoName = null;
+      } else {
+        // Associate currently playing video
+        if (!currentFilePath) {
+          alert('主播放器当前没有播放任何视频，无法关联！');
+          return;
+        }
+        currentEditingNote.videoPath = currentFilePath;
+        currentEditingNote.videoName = path.basename(currentFilePath);
+      }
+      
+      updateEditorAssociationUI();
+    });
+  }
+
+  // Close editor and go back to grid
+  function closeEditor() {
+    currentEditingNote = null;
+    noteEditorView.classList.add('hidden');
+    notesGridView.classList.remove('hidden');
+  }
+  
+  if (btnCloseEditor) {
+    btnCloseEditor.addEventListener('click', () => {
+      closeEditor();
+      loadAndRenderNotes();
+    });
+  }
+
+  // New Note button
+  if (btnAddNote) {
+    btnAddNote.addEventListener('click', () => {
+      const newNote = {
+        id: 'note_' + Date.now(),
+        title: '',
+        content: '',
+        categoryId: selectedNoteCategory !== 'all' ? selectedNoteCategory : 'uncategorized',
+        videoPath: currentFilePath || null,
+        videoName: currentFilePath ? path.basename(currentFilePath) : null,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+      
+      openNoteInEditor(newNote);
+    });
+  }
+
+  // Save Note
+  if (btnSaveNote) {
+    btnSaveNote.addEventListener('click', async () => {
+      if (!currentEditingNote) return;
+      
+      const title = noteTitleInput.value.trim();
+      const content = noteContentInput.value;
+      const categoryId = noteCategorySelect.value;
+      
+      currentEditingNote.title = title || '无标题笔记';
+      currentEditingNote.content = content;
+      currentEditingNote.categoryId = categoryId;
+      currentEditingNote.updatedAt = Date.now();
+      
+      // Update DB
+      const existingIdx = notesDB.notes.findIndex(n => n.id === currentEditingNote.id);
+      if (existingIdx !== -1) {
+        notesDB.notes[existingIdx] = currentEditingNote;
+      } else {
+        notesDB.notes.push(currentEditingNote);
+      }
+      
+      await ipcRenderer.invoke('save-notes-db', notesDB);
+      
+      alert('保存成功！');
+      closeEditor();
+      loadAndRenderNotes();
+    });
+  }
+
+  // Delete Note
+  if (btnDeleteNote) {
+    btnDeleteNote.addEventListener('click', async () => {
+      if (!currentEditingNote) return;
+      
+      if (confirm('确认删除这篇笔记吗？此操作无法撤销。')) {
+        notesDB.notes = notesDB.notes.filter(n => n.id !== currentEditingNote.id);
+        await ipcRenderer.invoke('save-notes-db', notesDB);
+        closeEditor();
+        loadAndRenderNotes();
+      }
+    });
+  }
+
+  // Markdown rendering preview functions
+  function renderPreview() {
+    if (!noteContentInput || !notePreviewContent) return;
+    
+    const text = noteContentInput.value;
+    
+    // Parse Math and Markdown
+    let html = text;
+    
+    // 1. Render display equations: $$ ... $$
+    html = html.replace(/\$\$([\s\S]+?)\$\$/g, (match, equation) => {
+      try {
+        if (typeof katex !== 'undefined') {
+          return `<div class="katex-display" style="padding:8px 0; overflow-x:auto;">${katex.renderToString(equation, { displayMode: true, throwOnError: false })}</div>`;
+        }
+      } catch (e) {
+        console.error('KaTeX display render error:', e);
+      }
+      return match;
+    });
+    
+    // 2. Render inline equations: $ ... $
+    html = html.replace(/\$([^\$\n]+?)\$/g, (match, equation) => {
+      try {
+        if (typeof katex !== 'undefined') {
+          return katex.renderToString(equation, { displayMode: false, throwOnError: false });
+        }
+      } catch (e) {
+        console.error('KaTeX inline render error:', e);
+      }
+      return match;
+    });
+
+    // 3. Render Markdown
+    if (typeof marked !== 'undefined') {
+      try {
+        notePreviewContent.innerHTML = marked.parse(html);
+      } catch (err) {
+        notePreviewContent.innerHTML = html;
+      }
+    } else {
+      notePreviewContent.textContent = html;
+    }
+    
+    // 4. Render Mermaid diagrams
+    if (typeof mermaid !== 'undefined') {
+      renderMermaidDiagrams(notePreviewContent);
+    }
+  }
+
+  // Mermaid diagrams renderer
+  async function renderMermaidDiagrams(container) {
+    const codeBlocks = container.querySelectorAll('code.language-mermaid');
+    if (codeBlocks.length === 0) return;
+    
+    let index = 0;
+    for (const block of codeBlocks) {
+      const code = block.textContent.trim();
+      const pre = block.parentElement;
+      
+      const diagDivId = `mermaid-note-${Date.now()}-${index++}`;
+      
+      try {
+        const { svg } = await mermaid.render(diagDivId, code);
+        pre.outerHTML = `<div class="mermaid-diagram" style="text-align:center; padding:16px 0; background:rgba(0,0,0,0.1); border-radius:6px; margin: 12px 0;">${svg}</div>`;
+      } catch (e) {
+        console.error('Mermaid render error:', e);
+        const errSvg = document.getElementById(diagDivId);
+        if (errSvg) errSvg.remove();
+      }
+    }
+  }
+
+  // Trigger preview render on input text changes
+  if (noteContentInput) {
+    noteContentInput.addEventListener('input', renderPreview);
+  }
+
+  // Global search input handling
+  if (notesSearchInput) {
+    let searchTimeout = null;
+    notesSearchInput.addEventListener('input', () => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => {
+        notesSearchQuery = notesSearchInput.value.trim();
+        renderNotesGrid();
+      }, 250);
+    });
+  }
+
+  // ==========================================
+  // Insert Screenshot Modal Actions
+  // ==========================================
+  
+  // Show modal
+  if (btnInsertScreenshot && insertScreenshotModal) {
+    btnInsertScreenshot.addEventListener('click', async () => {
+      insertScreenshotModal.classList.remove('hidden');
+      
+      // Load screenshots DB
+      screenshotsDB = await ipcRenderer.invoke('get-screenshots-db');
+      
+      // Populate category dropdown inside insert modal
+      if (insertShotCatSelect) {
+        insertShotCatSelect.innerHTML = '<option value="all">-- 所有分类 --</option>';
+        if (screenshotsDB && screenshotsDB.categories) {
+          screenshotsDB.categories.forEach(cat => {
+            const opt = document.createElement('option');
+            opt.value = cat.id;
+            opt.textContent = cat.name;
+            insertShotCatSelect.appendChild(opt);
+          });
+        }
+      }
+      
+      // Render screenshots inside modal
+      selectedInsertShot = null;
+      renderInsertScreenshotsList();
+    });
+  }
+
+  // Hide modal
+  const hideInsertShotModal = () => {
+    if (insertScreenshotModal) insertScreenshotModal.classList.add('hidden');
+  };
+  if (btnCloseInsertShotModal) btnCloseInsertShotModal.addEventListener('click', hideInsertShotModal);
+  if (btnCancelInsertShot) btnCancelInsertShot.addEventListener('click', hideInsertShotModal);
+
+  // Render insert list
+  function renderInsertScreenshotsList() {
+    if (!insertShotGrid) return;
+    insertShotGrid.innerHTML = '';
+    
+    const catFilter = insertShotCatSelect ? insertShotCatSelect.value : 'all';
+    const searchQuery = insertShotSearch ? insertShotSearch.value.trim().toLowerCase() : '';
+    
+    let filtered = screenshotsDB.screenshots || [];
+    if (catFilter !== 'all') {
+      filtered = filtered.filter(s => s.categoryId === catFilter);
+    }
+    if (searchQuery) {
+      filtered = filtered.filter(s => s.videoName && s.videoName.toLowerCase().includes(searchQuery));
+    }
+    
+    if (filtered.length === 0) {
+      insertShotGrid.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:40px; color:var(--text-muted); font-size:12px;">没有找到截图</div>`;
+      return;
+    }
+    
+    filtered.forEach(shot => {
+      const card = document.createElement('div');
+      card.className = `insert-shot-item ${selectedInsertShot === shot ? 'selected' : ''}`;
+      
+      const img = document.createElement('img');
+      img.src = `http://localhost:30032/screenshot?path=${encodeURIComponent(shot.absolutePath)}`;
+      card.appendChild(img);
+      
+      const meta = document.createElement('div');
+      meta.className = 'insert-shot-item-meta';
+      meta.textContent = `${shot.videoName} (${formatTime(shot.playbackTime)})`;
+      card.appendChild(meta);
+      
+      card.addEventListener('click', () => {
+        selectedInsertShot = shot;
+        insertShotGrid.querySelectorAll('.insert-shot-item').forEach(i => i.classList.remove('selected'));
+        card.classList.add('selected');
+      });
+      
+      card.addEventListener('dblclick', () => {
+        selectedInsertShot = shot;
+        confirmAndInsertScreenshot();
+      });
+      
+      insertShotGrid.appendChild(card);
+    });
+  }
+
+  if (insertShotCatSelect) {
+    insertShotCatSelect.addEventListener('change', renderInsertScreenshotsList);
+  }
+  if (insertShotSearch) {
+    let searchTimeout = null;
+    insertShotSearch.addEventListener('input', () => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(renderInsertScreenshotsList, 250);
+    });
+  }
+
+  function confirmAndInsertScreenshot() {
+    if (!selectedInsertShot) {
+      alert('请先选择一张图片！');
+      return;
+    }
+    
+    if (noteContentInput) {
+      const startPos = noteContentInput.selectionStart;
+      const endPos = noteContentInput.selectionEnd;
+      const text = noteContentInput.value;
+      
+      const imgSrc = `http://localhost:30032/screenshot?path=${encodeURIComponent(selectedInsertShot.absolutePath)}`;
+      const mdImage = `\n![${selectedInsertShot.videoName}_${formatTime(selectedInsertShot.playbackTime)}](${imgSrc})\n`;
+      
+      noteContentInput.value = text.substring(0, startPos) + mdImage + text.substring(endPos);
+      noteContentInput.selectionStart = noteContentInput.selectionEnd = startPos + mdImage.length;
+      noteContentInput.focus();
+      
+      renderPreview();
+    }
+    
+    hideInsertShotModal();
+  }
+
+  if (btnConfirmInsertShot) {
+    btnConfirmInsertShot.addEventListener('click', confirmAndInsertScreenshot);
   }
 }
 

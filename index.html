@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
 </head>
 <body>
   <!-- Custom titlebar for macOS window drag -->
@@ -58,6 +59,15 @@
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
               <circle cx="12" cy="13" r="4"></circle>
+            </svg>
+          </button>
+          <button id="btn-toggle-notes" class="btn-secondary-action" title="随堂笔记">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+              <polyline points="10 9 9 9 8 9"></polyline>
             </svg>
           </button>
           <button id="btn-toggle-settings" class="btn-secondary-action" title="设置">
@@ -894,6 +904,140 @@
     </div>
   </main>
 
+  <!-- Notes View -->
+  <main class="notes-view hidden" id="notes-view">
+    <div class="notes-header">
+      <h2>学习笔记</h2>
+      <div class="notes-header-actions">
+        <button id="btn-add-note" class="btn-primary" style="padding: 6px 12px; font-size: 13px; display: flex; align-items: center; justify-content: center; cursor: pointer; border-radius: 6px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px; margin-right: 4px;">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          新建笔记
+        </button>
+        <button id="btn-notes-back-to-player" class="btn-primary-text">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px; margin-right: 4px;">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+          返回播放器
+        </button>
+      </div>
+    </div>
+
+    <div class="notes-content-wrapper">
+      <!-- Left sidebar: filters and search -->
+      <aside class="notes-sidebar">
+        <!-- Search bar -->
+        <div class="notes-search-box">
+          <input type="text" id="notes-search-input" placeholder="搜索标题或内容...">
+        </div>
+        
+        <!-- Categories list -->
+        <div class="notes-sidebar-section" style="display: flex; flex-direction: column; flex: 1; overflow: hidden; margin-bottom: 8px;">
+          <h4>笔记分类</h4>
+          <div id="notes-categories-list" class="notes-sidebar-list" style="flex: 1; overflow-y: auto;">
+            <!-- Dynamic categories -->
+          </div>
+        </div>
+
+        <!-- Video associations -->
+        <div class="notes-sidebar-section" style="display: flex; flex-direction: column; flex: 1; overflow: hidden;">
+          <h4>视频关联</h4>
+          <div id="notes-videos-list" class="notes-sidebar-list" style="flex: 1; overflow-y: auto;">
+            <!-- Dynamic videos list -->
+          </div>
+        </div>
+      </aside>
+
+      <!-- Center/Main: Grid of Notes or Editor -->
+      <section class="notes-main-content">
+        <!-- Notes grid (when no note is actively being edited) -->
+        <div class="notes-grid-view" id="notes-grid-view">
+          <div class="notes-grid" id="notes-grid">
+            <!-- Note cards -->
+          </div>
+        </div>
+
+        <!-- Note Editor View (when editing a note) -->
+        <div class="note-editor-view hidden" id="note-editor-view">
+          <div class="editor-header">
+            <button id="btn-close-editor" class="btn-secondary" style="padding: 6px 12px; font-size: 12px; border-radius: 6px; cursor: pointer;">
+              返回列表
+            </button>
+            <div class="editor-meta-info" style="display: flex; gap: 12px; align-items: center;">
+              <select id="note-category-select" class="dropdown-select" style="min-width: 120px; padding: 4px 8px; font-size: 12px;"></select>
+              <span id="note-association-status" class="note-association-tag">未关联视频</span>
+              <button id="btn-toggle-associate" class="btn-secondary" style="padding: 4px 8px; font-size: 11px; border-radius: 4px; cursor: pointer; white-space: nowrap;">关联当前视频</button>
+            </div>
+            <div style="margin-left: auto; display: flex; gap: 8px;">
+              <button id="btn-insert-screenshot" class="btn-secondary" style="padding: 6px 12px; font-size: 12px; display: flex; align-items: center; border-radius: 6px; cursor: pointer;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 13px; height: 13px; margin-right: 4px;">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                  <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                  <polyline points="21 15 16 10 5 21"></polyline>
+                </svg>
+                插入截图
+              </button>
+              <button id="btn-save-note" class="btn-primary" style="padding: 6px 12px; font-size: 12px; border-radius: 6px; cursor: pointer;">
+                保存笔记
+              </button>
+              <button id="btn-delete-note" class="btn-secondary" style="padding: 6px 12px; font-size: 12px; color: #ef4444; border-color: rgba(239,68,68,0.2); border-radius: 6px; cursor: pointer;">
+                删除
+              </button>
+            </div>
+          </div>
+
+          <div class="editor-title-row">
+            <input type="text" id="note-title-input" placeholder="输入笔记标题...">
+          </div>
+
+          <div class="editor-workspace">
+            <div class="editor-left-pane">
+              <textarea id="note-content-input" placeholder="使用 Markdown 撰写笔记，支持 KaTeX 数学公式（如 $f(x)=x^2$ 或 $$a^2+b^2=c^2$$）、Mermaid 图表..."></textarea>
+            </div>
+            <div class="editor-right-pane">
+              <div class="markdown-preview-header">实时渲染预览</div>
+              <div id="note-preview-content" class="markdown-body"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Insert Screenshot Modal -->
+  <div class="modal-overlay hidden" id="insert-screenshot-modal" style="z-index: 10000;">
+    <div class="modal-card" style="width: 600px; height: 500px; display: flex; flex-direction: column; padding: 20px; box-sizing: border-box;">
+      <button class="modal-close" id="btn-close-insert-shot-modal" title="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      <div class="modal-header-simple" style="margin-bottom: 12px; flex-shrink: 0;">
+        <h3 style="margin: 0; font-size: 15px; color: var(--text-main);">选择要插入的截图</h3>
+        <p style="margin: 4px 0 0 0; font-size: 11px; color: var(--text-muted);">双击图片直接插入，或选中图片点击确认</p>
+      </div>
+      
+      <!-- Filter panel -->
+      <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-shrink: 0; align-items: center; width: 100%;">
+        <select id="insert-shot-cat-select" class="dropdown-select" style="flex: 1; padding: 6px 10px; font-size: 12px;"></select>
+        <input type="text" id="insert-shot-search" placeholder="搜索视频名称..." style="flex: 1.5; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.05); color: var(--text-main); font-size: 12px; outline: none; box-sizing: border-box;">
+      </div>
+      
+      <!-- Screenshots grid -->
+      <div id="insert-shot-grid" style="flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; padding: 8px; border: 1px solid var(--border-color); border-radius: 6px; background: rgba(0,0,0,0.15); box-sizing: border-box;">
+        <!-- Screenshots -->
+      </div>
+      
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; flex-shrink: 0;">
+        <button id="btn-cancel-insert-shot" class="btn-secondary" style="padding: 6px 12px; font-size: 12px; border-radius: 6px; cursor: pointer;">取消</button>
+        <button id="btn-confirm-insert-shot" class="btn-primary" style="padding: 6px 12px; font-size: 12px; border-radius: 6px; cursor: pointer;">确认插入</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Lightbox Preview Modal -->
   <div class="modal-overlay hidden" id="lightbox-modal">
     <div class="modal-card lightbox-modal-card" style="width: 100vw !important; height: 100vh !important; max-width: 100vw !important; max-height: 100vh !important; display: flex; flex-direction: column; overflow: hidden; padding: 0; background: #000; border-radius: 0; border: none; margin: 0;">
@@ -1012,6 +1156,9 @@
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10.2.4/dist/mermaid.min.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>
