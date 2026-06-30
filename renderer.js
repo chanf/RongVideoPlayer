@@ -4119,6 +4119,7 @@ function initNotesFeature() {
   // Editor elements
   const noteEditorView = document.getElementById('note-editor-view');
   const btnCloseEditor = document.getElementById('btn-close-editor');
+  const btnEditNote = document.getElementById('btn-edit-note');
   const noteCategorySelect = document.getElementById('note-category-select');
   const noteAssociationStatus = document.getElementById('note-association-status');
   const btnToggleAssociate = document.getElementById('btn-toggle-associate');
@@ -4126,8 +4127,11 @@ function initNotesFeature() {
   const btnSaveNote = document.getElementById('btn-save-note');
   const btnDeleteNote = document.getElementById('btn-delete-note');
   const noteTitleInput = document.getElementById('note-title-input');
+  const noteTitleDisplay = document.getElementById('note-title-display');
   const noteContentInput = document.getElementById('note-content-input');
   const notePreviewContent = document.getElementById('note-preview-content');
+  const editorLeftPane = document.getElementById('editor-left-pane');
+  const markdownPreviewHeader = document.getElementById('markdown-preview-header');
 
   // Insert Screenshot Modal Elements
   const insertScreenshotModal = document.getElementById('insert-screenshot-modal');
@@ -4403,7 +4407,7 @@ function initNotesFeature() {
   }
 
   // Open Note in Editor
-  function openNoteInEditor(note) {
+  function openNoteInEditor(note, isNew = false) {
     currentEditingNote = note;
     
     // Toggle panels
@@ -4430,6 +4434,42 @@ function initNotesFeature() {
 
     updateEditorAssociationUI();
     renderPreview();
+    toggleEditorMode(isNew);
+  }
+
+  // Toggle between View mode and Edit mode inside note detail pane
+  function toggleEditorMode(isEdit) {
+    if (isEdit) {
+      if (btnEditNote) btnEditNote.classList.add('hidden');
+      if (btnInsertScreenshot) btnInsertScreenshot.classList.remove('hidden');
+      if (btnSaveNote) btnSaveNote.classList.remove('hidden');
+      if (btnToggleAssociate) btnToggleAssociate.classList.remove('hidden');
+      if (noteCategorySelect) noteCategorySelect.disabled = false;
+      
+      if (noteTitleInput) noteTitleInput.classList.remove('hidden');
+      if (noteTitleDisplay) noteTitleDisplay.style.display = 'none';
+      if (editorLeftPane) editorLeftPane.classList.remove('hidden');
+      if (markdownPreviewHeader) {
+        markdownPreviewHeader.classList.remove('hidden');
+        markdownPreviewHeader.textContent = '实时渲染预览';
+      }
+    } else {
+      if (btnEditNote) btnEditNote.classList.remove('hidden');
+      if (btnInsertScreenshot) btnInsertScreenshot.classList.add('hidden');
+      if (btnSaveNote) btnSaveNote.classList.add('hidden');
+      if (btnToggleAssociate) btnToggleAssociate.classList.add('hidden');
+      if (noteCategorySelect) noteCategorySelect.disabled = true;
+      
+      if (noteTitleInput) noteTitleInput.classList.add('hidden');
+      if (noteTitleDisplay) {
+        noteTitleDisplay.style.display = 'block';
+        noteTitleDisplay.textContent = noteTitleInput.value.trim() || '无标题笔记';
+      }
+      if (editorLeftPane) editorLeftPane.classList.add('hidden');
+      if (markdownPreviewHeader) {
+        markdownPreviewHeader.classList.add('hidden');
+      }
+    }
   }
 
   // Update editor association status UI
@@ -4511,7 +4551,14 @@ function initNotesFeature() {
         updatedAt: Date.now()
       };
       
-      openNoteInEditor(newNote);
+      openNoteInEditor(newNote, true);
+    });
+  }
+
+  // Edit Note button
+  if (btnEditNote) {
+    btnEditNote.addEventListener('click', () => {
+      toggleEditorMode(true);
     });
   }
 
