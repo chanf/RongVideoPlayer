@@ -4122,7 +4122,6 @@ function initSettings() {
 let notesDB = { notes: [] };
 let currentEditingNote = null;
 let selectedNoteCategory = 'all';
-let selectedNoteVideo = 'all'; // 'all', 'standalone', or specific video path
 let notesSearchQuery = '';
 
 // Initialize notes
@@ -4149,7 +4148,6 @@ function initNotesFeature() {
   const btnUploadMaterial = document.getElementById('btn-upload-material');
   const notesSearchInput = document.getElementById('notes-search-input');
   const notesCategoriesList = document.getElementById('notes-categories-list');
-  const notesVideosList = document.getElementById('notes-videos-list');
   const notesGridView = document.getElementById('notes-grid-view');
   const notesGrid = document.getElementById('notes-grid');
   
@@ -4158,8 +4156,6 @@ function initNotesFeature() {
   const btnCloseEditor = document.getElementById('btn-close-editor');
   const btnEditNote = document.getElementById('btn-edit-note');
   const noteCategorySelect = document.getElementById('note-category-select');
-  const noteAssociationStatus = document.getElementById('note-association-status');
-  const btnToggleAssociate = document.getElementById('btn-toggle-associate');
   const btnInsertScreenshot = document.getElementById('btn-insert-screenshot');
   const btnSaveNote = document.getElementById('btn-save-note');
   const btnDeleteNote = document.getElementById('btn-delete-note');
@@ -4252,7 +4248,7 @@ function initNotesFeature() {
 
   // Render Sidebar Filters
   function renderSidebarFilters() {
-    if (!notesCategoriesList || !notesVideosList) return;
+    if (!notesCategoriesList) return;
     
     // Render Categories
     notesCategoriesList.innerHTML = '';
@@ -4298,61 +4294,6 @@ function initNotesFeature() {
         notesCategoriesList.appendChild(catItem);
       });
     }
-
-    // Render Video Associations
-    notesVideosList.innerHTML = '';
-    
-    // All videos option
-    const allVidItem = document.createElement('div');
-    allVidItem.className = `notes-sidebar-item ${selectedNoteVideo === 'all' ? 'active' : ''}`;
-    allVidItem.textContent = '🎬 全部关联';
-    allVidItem.addEventListener('click', () => {
-      selectedNoteVideo = 'all';
-      renderSidebarFilters();
-      renderNotesGrid();
-    });
-    notesVideosList.appendChild(allVidItem);
-
-    // Standalone notes option
-    const standaloneCount = notesDB.notes.filter(n => !n.videoPath).length;
-    const standaloneItem = document.createElement('div');
-    standaloneItem.className = `notes-sidebar-item ${selectedNoteVideo === 'standalone' ? 'active' : ''}`;
-    standaloneItem.innerHTML = `<span>📝 独立笔记</span> <span style="font-size:11px; opacity:0.7;">(${standaloneCount})</span>`;
-    standaloneItem.addEventListener('click', () => {
-      selectedNoteVideo = 'standalone';
-      renderSidebarFilters();
-      renderNotesGrid();
-    });
-    notesVideosList.appendChild(standaloneItem);
-
-    // Associated videos
-    const videoPaths = new Set();
-    const videoMap = new Map(); // { path: name }
-    notesDB.notes.forEach(n => {
-      if (n.videoPath) {
-        videoPaths.add(n.videoPath);
-        videoMap.set(n.videoPath, n.videoName);
-      }
-    });
-
-    videoPaths.forEach(vPath => {
-      const vName = videoMap.get(vPath) || path.basename(vPath);
-      const count = notesDB.notes.filter(n => n.videoPath === vPath).length;
-      
-      const vidItem = document.createElement('div');
-      vidItem.className = `notes-sidebar-item ${selectedNoteVideo === vPath ? 'active' : ''}`;
-      vidItem.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:8px;';
-      vidItem.innerHTML = `
-        <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px;" title="${vName}">🎥 ${vName}</span>
-        <span style="font-size:11px; opacity:0.7; flex-shrink:0;">(${count})</span>
-      `;
-      vidItem.addEventListener('click', () => {
-        selectedNoteVideo = vPath;
-        renderSidebarFilters();
-        renderNotesGrid();
-      });
-      notesVideosList.appendChild(vidItem);
-    });
   }
 
   // Render Notes Grid
@@ -4369,15 +4310,6 @@ function initNotesFeature() {
         filtered = filtered.filter(n => !n.categoryId || n.categoryId === 'uncategorized');
       } else {
         filtered = filtered.filter(n => n.categoryId === selectedNoteCategory);
-      }
-    }
-    
-    // Video association filter
-    if (selectedNoteVideo !== 'all') {
-      if (selectedNoteVideo === 'standalone') {
-        filtered = filtered.filter(n => !n.videoPath);
-      } else {
-        filtered = filtered.filter(n => n.videoPath === selectedNoteVideo);
       }
     }
     
@@ -4463,18 +4395,6 @@ function initNotesFeature() {
       catTag.textContent = catName;
       meta.appendChild(catTag);
       
-      if (note.videoName) {
-        const vidTag = document.createElement('span');
-        vidTag.style.cssText = 'color: #3b82f6; max-width: 120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
-        vidTag.textContent = `🎥 ${note.videoName}`;
-        vidTag.title = note.videoName;
-        meta.appendChild(vidTag);
-      } else {
-        const standaloneTag = document.createElement('span');
-        standaloneTag.textContent = '📝 独立笔记';
-        meta.appendChild(standaloneTag);
-      }
-      
       card.appendChild(meta);
       
       card.addEventListener('click', () => {
@@ -4511,7 +4431,6 @@ function initNotesFeature() {
       });
     }
 
-    updateEditorAssociationUI();
     renderPreview();
     toggleEditorMode(isNew);
   }
@@ -4528,8 +4447,6 @@ function initNotesFeature() {
       if (btnEditNote) btnEditNote.classList.add('hidden');
       if (btnInsertScreenshot) btnInsertScreenshot.classList.add('hidden');
       if (btnSaveNote) btnSaveNote.classList.add('hidden');
-      if (btnToggleAssociate) btnToggleAssociate.classList.add('hidden');
-      if (noteCategorySelect) noteCategorySelect.disabled = true;
       
       if (noteTitleInput) noteTitleInput.classList.add('hidden');
       if (noteTitleDisplay) noteTitleDisplay.style.display = 'none';
@@ -4546,7 +4463,6 @@ function initNotesFeature() {
       if (btnEditNote) btnEditNote.classList.add('hidden');
       if (btnInsertScreenshot) btnInsertScreenshot.classList.remove('hidden');
       if (btnSaveNote) btnSaveNote.classList.remove('hidden');
-      if (btnToggleAssociate) btnToggleAssociate.classList.remove('hidden');
       if (noteCategorySelect) noteCategorySelect.disabled = false;
       
       if (noteTitleInput) noteTitleInput.classList.remove('hidden');
@@ -4560,7 +4476,6 @@ function initNotesFeature() {
       if (btnEditNote) btnEditNote.classList.remove('hidden');
       if (btnInsertScreenshot) btnInsertScreenshot.classList.add('hidden');
       if (btnSaveNote) btnSaveNote.classList.add('hidden');
-      if (btnToggleAssociate) btnToggleAssociate.classList.add('hidden');
       if (noteCategorySelect) noteCategorySelect.disabled = true;
       
       if (noteTitleInput) noteTitleInput.classList.add('hidden');
@@ -4575,56 +4490,7 @@ function initNotesFeature() {
     }
   }
 
-  // Update editor association status UI
-  function updateEditorAssociationUI() {
-    if (!currentEditingNote) return;
-    
-    if (currentEditingNote.videoPath) {
-      noteAssociationStatus.textContent = `关联: ${currentEditingNote.videoName}`;
-      noteAssociationStatus.title = currentEditingNote.videoPath;
-      noteAssociationStatus.style.cssText = 'background: rgba(59, 130, 246, 0.1); color: #3b82f6; border-color: rgba(59,130,246,0.2); cursor: pointer;';
-      btnToggleAssociate.textContent = '取消关联';
-      btnToggleAssociate.style.color = '#ef4444';
-      
-      // Clicking the associated tag starts playing the video!
-      noteAssociationStatus.onclick = () => {
-        if (confirm(`是否开始播放关联的视频 "${currentEditingNote.videoName}"？`)) {
-          btnNotesBackToPlayer.click();
-          playVideo(currentEditingNote.videoPath, 0, true);
-        }
-      };
-    } else {
-      noteAssociationStatus.textContent = '独立笔记';
-      noteAssociationStatus.title = '';
-      noteAssociationStatus.style.cssText = 'background: rgba(255,255,255,0.05); color: var(--text-muted); border-color: var(--border-color); cursor: default;';
-      noteAssociationStatus.onclick = null;
-      btnToggleAssociate.textContent = currentFilePath ? '关联当前视频' : '未播放视频';
-      btnToggleAssociate.style.color = '';
-    }
-  }
 
-  // Toggle video association
-  if (btnToggleAssociate) {
-    btnToggleAssociate.addEventListener('click', () => {
-      if (!currentEditingNote) return;
-      
-      if (currentEditingNote.videoPath) {
-        // Clear association
-        currentEditingNote.videoPath = null;
-        currentEditingNote.videoName = null;
-      } else {
-        // Associate currently playing video
-        if (!currentFilePath) {
-          alert('主播放器当前没有播放任何视频，无法关联！');
-          return;
-        }
-        currentEditingNote.videoPath = currentFilePath;
-        currentEditingNote.videoName = path.basename(currentFilePath);
-      }
-      
-      updateEditorAssociationUI();
-    });
-  }
 
   // Close editor and go back to grid
   function closeEditor() {

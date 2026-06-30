@@ -941,18 +941,10 @@
         </div>
         
         <!-- Categories list -->
-        <div class="notes-sidebar-section" style="display: flex; flex-direction: column; flex: 1; overflow: hidden; margin-bottom: 8px;">
+        <div class="notes-sidebar-section" style="display: flex; flex-direction: column; flex: 1; overflow: hidden;">
           <h4>笔记分类</h4>
           <div id="notes-categories-list" class="notes-sidebar-list" style="flex: 1; overflow-y: auto;">
             <!-- Dynamic categories -->
-          </div>
-        </div>
-
-        <!-- Video associations -->
-        <div class="notes-sidebar-section" style="display: flex; flex-direction: column; flex: 1; overflow: hidden;">
-          <h4>视频关联</h4>
-          <div id="notes-videos-list" class="notes-sidebar-list" style="flex: 1; overflow-y: auto;">
-            <!-- Dynamic videos list -->
           </div>
         </div>
       </aside>
@@ -989,11 +981,9 @@
               <h2 id="note-title-display" style="margin: 0; font-size: 16px; font-weight: 600; color: var(--text-main); display: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;"></h2>
             </div>
 
-            <!-- Middle: Categories and Video Associations -->
+            <!-- Middle: Categories -->
             <div class="editor-meta-info" style="display: flex; gap: 8px; align-items: center; flex-shrink: 0;">
               <select id="note-category-select" class="dropdown-select" style="min-width: 100px; padding: 4px 8px; font-size: 12px;"></select>
-              <span id="note-association-status" class="note-association-tag">未关联视频</span>
-              <button id="btn-toggle-associate" class="btn-secondary" style="padding: 4px 8px; font-size: 11px; border-radius: 4px; cursor: pointer; white-space: nowrap;">关联当前视频</button>
             </div>
 
             <!-- Right: Actions -->
