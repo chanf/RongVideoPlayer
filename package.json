@@ -17,6 +17,15 @@
   "build": {
     "appId": "com.rong.videoplayer",
     "productName": "Rong VideoPlayer",
+    "extraResources": [
+      {
+        "from": "bin",
+        "to": "bin",
+        "filter": [
+          "ocr_mac"
+        ]
+      }
+    ],
     "mac": {
       "category": "public.app-category.video",
       "target": [

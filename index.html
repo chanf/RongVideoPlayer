@@ -36,15 +36,34 @@
         </div>
 
         <div class="sidebar-actions">
-          <button id="btn-open-folder" class="btn-primary" style="flex: 1;">
+          <button id="btn-open-folder" class="btn-primary" title="打开媒体文件夹">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
             </svg>
-            打开媒体文件夹
           </button>
           <button id="btn-toggle-downloader" class="btn-secondary-action" title="切换下载面板">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
+            </svg>
+          </button>
+          <button id="btn-toggle-community" class="btn-secondary-action hidden" title="在线分享社区">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+          </button>
+          <button id="btn-toggle-screenshots" class="btn-secondary-action" title="本地截图库">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+              <circle cx="12" cy="13" r="4"></circle>
+            </svg>
+          </button>
+          <button id="btn-toggle-settings" class="btn-secondary-action" title="设置">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
             </svg>
           </button>
         </div>
@@ -84,6 +103,14 @@
     <main class="player-container" id="player-container">
       <!-- The Video Element -->
       <video id="video-element" preload="auto"></video>
+      <div id="screenshot-flash" class="screenshot-flash hidden"></div>
+      <div id="screenshot-toast" class="screenshot-toast hidden">
+        <img id="screenshot-toast-img">
+        <div class="toast-body">
+          <h4>截图已保存</h4>
+          <p id="screenshot-toast-time">00:00</p>
+        </div>
+      </div>
 
       <!-- Welcome Overlay / No Video Loaded Screen -->
       <div class="welcome-overlay" id="welcome-overlay">
@@ -246,6 +273,14 @@
                 </svg>
               </button>
 
+              <!-- Screenshot (Option+1) -->
+              <button id="btn-screenshot" class="control-btn" title="截取视频帧 (Option + 1)">
+                <svg class="control-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                  <circle cx="12" cy="13" r="4"></circle>
+                </svg>
+              </button>
+
               <!-- Fullscreen -->
               <button id="btn-fullscreen" class="control-btn" title="全屏 (F)">
                 <svg id="icon-fullscreen-enter" class="control-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -351,7 +386,10 @@
             <div class="queue-section">
               <div class="queue-header">
                 <h3>下载任务队列</h3>
-                <div class="queue-actions">
+                <div class="queue-actions" style="display: flex; gap: 10px; align-items: center;">
+                  <button id="btn-pause-all-tasks" class="btn-link" style="color: var(--text-muted);">全部暂停</button>
+                  <button id="btn-start-all-tasks" class="btn-link" style="color: var(--accent-color);">全部开始</button>
+                  <span style="color: var(--border-color); font-size: 11px;">|</span>
                   <button id="btn-clear-completed-tasks" class="btn-link">清空已完成</button>
                 </div>
               </div>
@@ -365,6 +403,553 @@
         </div>
       </div>
     </main>
+
+    <!-- Online Share Community View -->
+    <main class="community-view hidden" id="community-view">
+      <div class="community-header">
+        <h2>在线视频分享社区</h2>
+        <div class="community-header-actions" style="display: flex; gap: 12px; align-items: center;">
+          <button id="btn-admin-entrance" class="btn-secondary-text-action" style="font-size: 13px; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; gap: 4px; background: none; border: none; outline: none;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px;">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+            管理员通道
+          </button>
+          <button id="btn-share-collection" class="btn-primary" style="padding: 6px 12px; font-size: 13px;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px; margin-right: 4px;">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            分享合集
+          </button>
+          <button id="btn-community-back-to-player" class="btn-primary-text">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px; margin-right: 4px;">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+            返回播放器
+          </button>
+        </div>
+      </div>
+
+      <div class="community-content">
+        <!-- Category & Search Section -->
+        <div class="community-bar">
+          <div class="category-tabs" id="community-category-tabs">
+            <div class="category-tab active" data-category="all">全部</div>
+            <div class="category-tab" data-category="study">科技商务</div>
+            <div class="category-tab" data-category="academic">学术研讨</div>
+            <div class="category-tab" data-category="entertainment">影音娱乐</div>
+            <div class="category-tab" data-category="anime">国漫番剧</div>
+            <div class="category-tab" data-category="life">日常生活</div>
+          </div>
+          
+          <div style="display: flex; gap: 12px; align-items: center;">
+            <!-- Sort dropdown -->
+            <select id="community-sort-select" class="dropdown-select" style="padding: 4px 8px; border-radius: 6px; font-size: 12px;">
+              <option value="likes">最多推荐</option>
+              <option value="newest" selected>最新发布</option>
+              <option value="imports">最多导入</option>
+            </select>
+            
+            <div class="search-container" style="margin-top: 0; width: 180px; height: 28px;">
+              <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 12px; height: 12px; left: 8px;">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input type="text" id="community-search-input" placeholder="搜索合集名称..." style="padding-left: 26px; font-size: 11px;">
+            </div>
+          </div>
+        </div>
+
+        <!-- Collection Grid -->
+        <div class="community-grid-container">
+          <div class="community-grid" id="community-grid">
+            <!-- Dynamic Grid Cards -->
+          </div>
+        </div>
+      </div>
+    </main>
+
+  <!-- Collection Detail Modal -->
+  <div class="modal-overlay hidden" id="collection-detail-modal">
+    <div class="modal-card detail-modal-card">
+      <button class="modal-close" id="btn-close-detail-modal" title="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      <div class="modal-body detail-modal-body">
+        <div class="detail-header-section">
+          <div class="detail-cover" id="detail-cover-img"></div>
+          <div class="detail-meta-info">
+            <span class="detail-category-tag" id="detail-cat-tag">分类</span>
+            <h3 id="detail-title">合集标题</h3>
+            <p class="detail-author-row">由 <span id="detail-creator" style="font-weight: 600;">@贡献者</span> 分享</p>
+            <div class="detail-actions-row">
+              <button id="btn-detail-play-all" class="btn-primary">
+                <svg viewBox="0 0 24 24" fill="currentColor" style="width: 14px; height: 14px; margin-right: 4px;">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                一键播放合集
+              </button>
+              <button id="btn-detail-download-all" class="btn-secondary">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px; margin-right: 4px;">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
+                </svg>
+                一键下载合集
+              </button>
+              <button id="btn-detail-like" class="btn-like-action" title="推荐合集">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px; margin-right: 4px;">
+                  <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
+                </svg>
+                <span id="detail-likes-count">0</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="detail-description-section">
+          <h4>合集简介</h4>
+          <p id="detail-desc">这里是合集描述文字...</p>
+        </div>
+        <div class="detail-episodes-section">
+          <h4>视频集数 (<span id="detail-episode-count">0</span>)</h4>
+          <div class="detail-episodes-list" id="detail-episodes-list">
+            <!-- list of video elements -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Share Collection Modal -->
+  <div class="modal-overlay hidden" id="share-collection-modal">
+    <div class="modal-card form-modal-card">
+      <button class="modal-close" id="btn-close-share-modal" title="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      <div class="modal-body">
+        <h3>分享新合集</h3>
+        <p class="modal-subtitle">分享高品质视频合集，共建在线分享社区</p>
+        
+        <form id="share-collection-form" class="modal-form">
+          <div class="form-group">
+            <label for="share-title">合集名称 <span class="required">*</span></label>
+            <input type="text" id="share-title" required placeholder="如：Vue3 + TypeScript 全栈项目实战">
+          </div>
+          
+          <div class="form-row" style="display: flex; gap: 16px; margin-bottom: 12px;">
+            <div class="form-group" style="flex: 1; margin-bottom: 0;">
+              <label for="share-category">合集分类 <span class="required">*</span></label>
+              <select id="share-category" required class="dropdown-select" style="width: 100%;">
+                <option value="study">科技商务</option>
+                <option value="academic">学术研讨</option>
+                <option value="entertainment">影音娱乐</option>
+                <option value="anime">国漫番剧</option>
+                <option value="life">日常生活</option>
+              </select>
+            </div>
+            
+            <div class="form-group" style="flex: 1; margin-bottom: 0;">
+              <label for="share-creator">分享者昵称 <span class="required">*</span></label>
+              <input type="text" id="share-creator" required placeholder="如：极客先锋">
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label for="share-cover">封面图片链接 (支持 Web URL 或置空使用默认)</label>
+            <input type="text" id="share-cover" placeholder="如：https://images.unsplash.com/photo-...">
+          </div>
+          
+          <div class="form-group">
+            <label for="share-desc">合集简介 <span class="required">*</span></label>
+            <textarea id="share-desc" required placeholder="请介绍此合集包含的内容、适用对象等（支持 200 字以上）..." maxlength="400" style="height: 120px; resize: vertical; font-family: inherit; font-size: 13px; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.05); color: var(--text-main); outline: none; line-height: 1.5;"></textarea>
+          </div>
+          
+          <div class="form-group">
+            <label for="share-source-type">视频源类型 <span class="required">*</span></label>
+            <select id="share-source-type" class="dropdown-select" style="margin-bottom: 8px; width: 100%;">
+              <option value="bilibili">Bilibili 视频链接 (支持单视频/多P/合集系列)</option>
+              <option value="custom">自定义网络直链列表 (MP4 / M3U8)</option>
+            </select>
+            
+            <!-- Bilibili URL input container -->
+            <div id="source-bili-container">
+              <input type="text" id="share-bili-url" placeholder="支持粘贴 Bilibili 视频链接，例如: https://www.bilibili.com/video/BV...">
+              <p class="field-hint" style="margin: 4px 0 0 0; font-size: 11px; color: var(--text-muted);">发布后，系统将自动抓取该合集内的所有分P和视频分集列表。</p>
+            </div>
+
+            <!-- Custom list container -->
+            <div id="source-custom-container" class="hidden" style="display: none;">
+              <textarea id="share-custom-links" placeholder="输入格式（每行一个）：分集标题,视频播放直链地址
+例如：
+第一讲 课程介绍,https://example.com/video1.mp4
+第二讲 环境搭建,https://example.com/video2.m3u8" style="height: 80px; width: 100%; font-family: monospace; font-size: 12px; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.05); color: var(--text-main); outline: none;"></textarea>
+            </div>
+          </div>
+          
+          <div class="form-actions" style="margin-top: 18px; display: flex; justify-content: flex-end; gap: 12px;">
+            <button type="button" id="btn-cancel-share" class="btn-secondary" style="padding: 6px 16px;">取消</button>
+            <button type="submit" class="btn-primary" style="padding: 6px 16px;">提交审核</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Admin Modal -->
+  <div class="modal-overlay hidden" id="admin-modal">
+    <div class="modal-card admin-modal-card">
+      <button class="modal-close" id="btn-close-admin-modal" title="关闭" style="top: 24px; right: 24px; z-index: 10; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 50%; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: white; cursor: pointer;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width: 20px; height: 20px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      
+      <!-- Admin Login Screen (Centered dialog box) -->
+      <div id="admin-login-screen" class="modal-body" style="margin: auto; width: 420px; padding: 40px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); box-sizing: border-box;">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width: 48px; height: 48px; color: var(--accent-color);">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+          <h3 style="margin-top: 12px; font-size: 16px;">管理员安全鉴权</h3>
+          <p class="modal-subtitle" style="font-size: 12px; color: var(--text-muted);">请输入超级管理员凭证以管理合集审核</p>
+        </div>
+        
+        <form id="admin-login-form" class="modal-form">
+          <div class="form-group" style="margin-bottom: 12px;">
+            <label for="admin-username" style="display: block; margin-bottom: 6px; font-size: 13px;">账号</label>
+            <input type="text" id="admin-username" required placeholder="请输入管理员账号" value="admin" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.05); color: var(--text-main); outline: none;">
+          </div>
+          <div class="form-group" style="margin-bottom: 16px;">
+            <label for="admin-password" style="display: block; margin-bottom: 6px; font-size: 13px;">密码</label>
+            <input type="password" id="admin-password" required placeholder="请输入密码" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.05); color: var(--text-main); outline: none;">
+          </div>
+          <div class="form-actions" style="margin-top: 20px;">
+            <button type="submit" class="btn-primary" style="width: 100%; padding: 8px;">登录后台</button>
+          </div>
+        </form>
+      </div>
+ 
+      <!-- Admin Dashboard Screen (Full screen Audit Board) -->
+      <div id="admin-dashboard-screen" class="modal-body hidden" style="display: none; flex-direction: column; flex: 1; padding: 40px 60px; box-sizing: border-box; width: 100%; height: 100%; overflow: hidden;">
+        <div class="admin-dashboard-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 16px; margin-bottom: 24px; flex-shrink: 0;">
+          <div>
+            <h3 style="margin: 0; font-size: 20px; font-weight: 600;">超级管理员审核后台</h3>
+            <p style="margin: 4px 0 0 0; font-size: 12px; color: var(--text-muted);">处理用户的合集提交请求</p>
+          </div>
+          <button id="btn-admin-logout" class="btn-clear" style="color: var(--text-muted); font-size: 13px; border: 1px solid var(--border-color); padding: 6px 12px; border-radius: 6px; background: none; cursor: pointer; transition: all 0.2s ease;">退出登录</button>
+        </div>
+ 
+        <div style="display: flex; gap: 24px; flex: 1; overflow: hidden;">
+          <!-- Sidebar: Pending / Approved lists -->
+          <div class="admin-sidebar" style="width: 200px; border-right: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 8px; padding-right: 16px; flex-shrink: 0;">
+            <div class="admin-tab active" id="admin-tab-pending" style="padding: 10px 14px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s ease;">待审核 (<span id="admin-pending-count">0</span>)</div>
+            <div class="admin-tab" id="admin-tab-approved" style="padding: 10px 14px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s ease;">已发布 (<span id="admin-approved-count">0</span>)</div>
+            <div class="admin-tab" id="admin-tab-categories" style="padding: 10px 14px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s ease;">分类管理</div>
+          </div>
+          
+          <!-- Main workspace: Collection Detail & Actions -->
+          <div class="admin-workspace" style="flex: 1; display: flex; flex-direction: column; overflow-y: auto; padding-left: 4px;">
+            <div id="admin-empty-placeholder" class="queue-empty-placeholder" style="margin-top: 60px; font-size: 13px; color: var(--text-muted);">
+              选择左侧项目进行审核
+            </div>
+            
+            <div id="admin-list-container" style="display: flex; flex-direction: column; gap: 16px;">
+              <!-- Dynamic admin audit list items -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Screenshot Library View -->
+  <main class="screenshots-view hidden" id="screenshots-view">
+    <div class="screenshots-header">
+      <h2>视频截图库</h2>
+      <div class="screenshots-header-actions" style="display: flex; gap: 12px; align-items: center;">
+        <button id="btn-toggle-multiselect" class="btn-secondary-action" title="多选" style="padding: 6px 12px; font-size: 13px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px; margin-right: 4px;">
+            <polyline points="9 11 12 14 22 4"></polyline>
+            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+          </svg>
+          多选
+        </button>
+        <button id="btn-screenshots-back-to-player" class="btn-primary-text">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px; margin-right: 4px;">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+          返回播放器
+        </button>
+      </div>
+    </div>
+
+    <div class="screenshots-content" style="display: flex; flex: 1; overflow: hidden; padding: 20px; gap: 20px;">
+      <!-- Left Sidebar: Categories List -->
+      <aside class="screenshots-sidebar" style="width: 180px; border-right: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 8px; padding-right: 12px; flex-shrink: 0;">
+        <div class="category-list-container" id="screenshot-categories-list" style="display: flex; flex-direction: column; gap: 6px; overflow-y: auto; flex: 1;">
+          <!-- Category list items dynamically generated -->
+        </div>
+      </aside>
+
+      <!-- Right Main: Grid Gallery -->
+      <div class="screenshots-main-panel" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+        <!-- Top bar: search filter -->
+        <div class="screenshots-bar" style="display: flex; justify-content: flex-end; margin-bottom: 16px; flex-shrink: 0;">
+          <div class="search-container" style="margin-top: 0; width: 360px; height: 36px; border-radius: 8px;">
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px; left: 12px;">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="text" id="screenshot-search-input" placeholder="搜索截图或视频名称..." style="padding-left: 36px; font-size: 13px; height: 100%;">
+          </div>
+        </div>
+
+        <!-- Cards Grid -->
+        <div class="screenshots-grid-container" style="flex: 1; overflow-y: auto; padding-bottom: 20px;">
+          <div class="screenshots-grid" id="screenshots-grid">
+            <!-- Dynamic Screenshot Grid Cards -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Multi-select action bar (shown only in select mode via .multiselect-active) -->
+    <div class="screenshots-actionbar" id="screenshots-actionbar">
+      <span class="selected-count" id="selected-count-label">已选 0 项</span>
+      <div class="actionbar-spacer"></div>
+      <button id="btn-screenshot-select-all" class="btn-primary-text" title="全选当前可见截图">全选</button>
+      <select id="batch-category-select" class="dropdown-select" title="移动到分类" disabled>
+        <option value="" disabled selected>移动到分类…</option>
+      </select>
+      <button id="btn-delete-selected" class="btn-actionbar-danger" disabled>删除选中</button>
+      <button id="btn-cancel-multiselect" class="btn-primary-text" title="退出多选">取消</button>
+    </div>
+  </main>
+
+  <!-- Settings View -->
+  <main class="settings-view hidden" id="settings-view">
+    <div class="settings-header">
+      <h2>系统设置</h2>
+      <button id="btn-settings-back-to-player" class="btn-primary-text">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px; margin-right: 4px;">
+          <polyline points="15 18 9 12 15 6"></polyline>
+        </svg>
+        返回播放器
+      </button>
+    </div>
+
+    <div class="settings-content-wrapper">
+      <div class="settings-sidebar-menu">
+        <div class="settings-menu-item active" data-tab="general">通用设置</div>
+        <div class="settings-menu-item" data-tab="player">播放设置</div>
+        <div class="settings-menu-item" data-tab="download">下载设置</div>
+        <div class="settings-menu-item" data-tab="categories">分类管理</div>
+        <div class="settings-menu-item" data-tab="about">关于播放器</div>
+      </div>
+
+      <div class="settings-main-panel">
+        <!-- General Settings -->
+        <div class="settings-tab-content" id="tab-general">
+          <h3>通用设置</h3>
+          <div class="settings-section">
+            <div class="setting-item-row">
+              <div class="setting-item-label">
+                <h4>启动时自动恢复</h4>
+                <p>重新打开软件时，自动恢复上一次导入的媒体目录</p>
+              </div>
+              <div class="setting-item-control">
+                <label class="switch">
+                  <input type="checkbox" id="set-auto-resume" checked>
+                  <span class="slider-toggle"></span>
+                </label>
+              </div>
+            </div>
+            <div class="setting-item-row">
+              <div class="setting-item-label">
+                <h4>软件主题配色</h4>
+                <p>切换播放器的视觉配色系统</p>
+              </div>
+              <div class="setting-item-control">
+                <select id="set-theme-select" class="dropdown-select">
+                  <option value="default">玄天 (深空蓝黑)</option>
+                  <option value="zhucui">竹翠 (竹叶翠绿)</option>
+                  <option value="xiangye">缃叶 (秋叶琥珀)</option>
+                  <option value="daimo">黛墨 (徽墨纯黑)</option>
+                  <option value="ningzhi">凝脂 (温润玉白)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Player Settings -->
+        <div class="settings-tab-content hidden" id="tab-player">
+          <h3>播放设置</h3>
+          <div class="settings-section">
+            <div class="setting-item-row">
+              <div class="setting-item-label">
+                <h4>自动连播</h4>
+                <p>视频播放结束时，自动播放媒体目录树中的下一个视频</p>
+              </div>
+              <div class="setting-item-control">
+                <label class="switch">
+                  <input type="checkbox" id="set-autoplay-next" checked>
+                  <span class="slider-toggle"></span>
+                </label>
+              </div>
+            </div>
+            <div class="setting-item-row">
+              <div class="setting-item-label">
+                <h4>播放倍速</h4>
+                <p>设置默认播放倍速</p>
+              </div>
+              <div class="setting-item-control">
+                <select id="set-default-speed" class="dropdown-select">
+                  <option value="0.5">0.5x</option>
+                  <option value="0.75">0.75x</option>
+                  <option value="1.0" selected>1.0x</option>
+                  <option value="1.25">1.25x</option>
+                  <option value="1.5">1.5x</option>
+                  <option value="2.0">2.0x</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Download Settings -->
+        <div class="settings-tab-content hidden" id="tab-download">
+          <h3>下载设置</h3>
+          <div class="settings-section">
+            <div class="setting-item-row">
+              <div class="setting-item-label">
+                <h4>并发下载数</h4>
+                <p>设置 Bilibili 视频最大同时下载的任务数 (1-5)</p>
+              </div>
+              <div class="setting-item-control">
+                <input type="number" id="set-max-downloads" min="1" max="5" value="3" class="input-number">
+              </div>
+            </div>
+            <div class="setting-item-row">
+              <div class="setting-item-label">
+                <h4>默认保存路径</h4>
+                <p>视频下载完成后的保存目录</p>
+              </div>
+              <div class="setting-item-control" style="display: flex; gap: 8px; align-items: center;">
+                <span id="set-download-path-label" class="path-label" style="font-size: 12px; color: var(--text-muted); max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">系统默认下载目录</span>
+                <button id="btn-change-download-path" class="btn-secondary" style="padding: 4px 10px; font-size: 11px;">更改...</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Category Management Settings -->
+        <div class="settings-tab-content hidden" id="tab-categories">
+          <h3>分类管理</h3>
+          <div style="display: flex; gap: 12px; margin-bottom: 20px; align-items: center; width: 100%;">
+            <input type="text" id="set-new-cat-name" placeholder="新建截图分类名称..." style="flex: 1; padding: 10px 14px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.05); color: var(--text-main); outline: none; font-size: 13px; box-sizing: border-box;">
+            <button id="btn-set-add-cat" class="btn-primary" style="padding: 10px 20px; font-size: 13px; white-space: nowrap; border-radius: 6px; cursor: pointer; height: 38px; display: flex; align-items: center;">添加分类</button>
+          </div>
+          
+          <div id="set-categories-list" style="display: flex; flex-direction: column; gap: 8px; width: 100%;">
+            <!-- Categories dynamically loaded with delete buttons -->
+          </div>
+        </div>
+
+        <!-- About Settings -->
+        <div class="settings-tab-content hidden" id="tab-about">
+          <h3>关于播放器</h3>
+          <div class="settings-section about-section" style="text-align: center; padding: 20px 0;">
+            <div class="glow-logo" style="width: 60px; height: 60px; margin: 0 auto 16px; background: rgba(59, 130, 246, 0.1); border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 20px var(--accent-glow);">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width: 32px; height: 32px; color: var(--accent-color);">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+            </div>
+            <h4 style="font-size: 18px; margin: 0 0 6px 0; color: var(--text-main);">Rong VideoPlayer</h4>
+            <p style="font-size: 12px; color: var(--text-muted); margin: 0 0 16px 0;">Version 1.0.0 (macOS Native Style)</p>
+            <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6; max-width: 400px; margin: 0 auto;">
+              一款基于 Electron、HTML5 和 FFmpeg 打造的桌面视频播放器。支持智能实时转码流媒体播放与 Bilibili 视频下载。
+            </p>
+            <div style="margin-top: 44px; border-top: 1px solid var(--border-color); padding-top: 16px; font-size: 11px; color: var(--text-muted);">
+              © 2026 Rong Player Team. All rights reserved.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Lightbox Preview Modal -->
+  <div class="modal-overlay hidden" id="lightbox-modal">
+    <div class="modal-card lightbox-modal-card" style="width: 100vw !important; height: 100vh !important; max-width: 100vw !important; max-height: 100vh !important; display: flex; flex-direction: column; overflow: hidden; padding: 0; background: #000; border-radius: 0; border: none; margin: 0;">
+      <button class="modal-close" id="btn-close-lightbox" title="关闭" style="top: 24px; right: 24px; z-index: 10; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 50%; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: white;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width: 20px; height: 20px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      
+      <div class="lightbox-body" style="display: flex; flex-direction: column; height: 100%;">
+        <div class="lightbox-image-container" style="flex: 1; display: flex; justify-content: center; align-items: center; padding: 40px; background: #000; position: relative; overflow: hidden;">
+          <!-- Previous and Next arrows -->
+          <button id="btn-lightbox-prev" class="btn-lightbox-arrow" style="position: absolute; left: 24px; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 50%; width: 56px; height: 56px; color: white; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s ease; border: none; outline: none; z-index: 5;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width: 28px; height: 28px;">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+          </button>
+          <button id="btn-lightbox-next" class="btn-lightbox-arrow" style="position: absolute; right: 24px; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 50%; width: 56px; height: 56px; color: white; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s ease; border: none; outline: none; z-index: 5;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width: 28px; height: 28px;">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+          </button>
+          
+          <img id="lightbox-img" style="max-width: 90vw; max-height: 78vh; border-radius: 6px; box-shadow: 0 20px 50px rgba(0,0,0,0.8); object-fit: contain;">
+        </div>
+        
+        <div class="lightbox-meta-section" style="padding: 20px 40px; border-top: 1px solid rgba(255,255,255,0.08); background: rgba(15, 20, 30, 0.95); backdrop-filter: blur(20px); flex-shrink: 0; z-index: 4;">
+          <h3 id="lightbox-title" style="margin: 0 0 6px 0; font-size: 16px; font-weight: 600; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60vw;">截图文件名.png</h3>
+          <p id="lightbox-video-meta" style="margin: 0 0 14px 0; font-size: 12px; color: var(--text-muted);">源视频: 视频文件名.mp4 | 截图时刻: 00:00:00</p>
+          
+          <div class="lightbox-actions" style="display: flex; gap: 12px;">
+            <button id="btn-lightbox-play-here" class="btn-primary" style="padding: 8px 18px; font-size: 13px; border-radius: 6px;">
+              <svg viewBox="0 0 24 24" fill="currentColor" style="width: 14px; height: 14px; margin-right: 6px;">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+              跳转到视频播放点
+            </button>
+            <button id="btn-lightbox-copy" class="btn-secondary" style="padding: 8px 18px; font-size: 13px; border-radius: 6px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px; margin-right: 6px;">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              复制到剪贴板
+            </button>
+            <button id="btn-lightbox-reveal" class="btn-secondary" style="padding: 8px 18px; font-size: 13px; border-radius: 6px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px; margin-right: 6px;">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+              </svg>
+              在 Finder 中显示
+            </button>
+            <button id="btn-lightbox-delete" class="btn-secondary" style="padding: 8px 18px; font-size: 13px; border-radius: 6px; margin-left: auto; color: #ef4444; border-color: rgba(239, 68, 68, 0.2);">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px; margin-right: 6px;">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              </svg>
+              删除截图
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
     <!-- Right Panel (Recent Playback) -->
     <aside class="right-panel" id="right-panel">
@@ -384,6 +969,8 @@
       </div>
     </aside>
   </div>
+
+  <!-- Create Category Modal -->
 
   <!-- Bilibili Login Modal -->
   <div class="modal-overlay hidden" id="bili-login-modal">

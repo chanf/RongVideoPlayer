@@ -39,6 +39,32 @@ function resolveBinaryPath(name) {
 const FFMPEG_PATH = resolveBinaryPath('ffmpeg');
 const FFPROBE_PATH = resolveBinaryPath('ffprobe');
 
+function checkFFmpegExists() {
+  try {
+    if (path.isAbsolute(FFMPEG_PATH)) {
+      return fs.existsSync(FFMPEG_PATH);
+    }
+    const { execSync } = require('child_process');
+    execSync(`${FFMPEG_PATH} -version`, { stdio: [] });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function checkFolderWritable(dirPath) {
+  try {
+    fs.mkdirSync(dirPath, { recursive: true });
+    const testFile = path.join(dirPath, `.write_test_${Date.now()}`);
+    fs.writeFileSync(testFile, 'test');
+    fs.unlinkSync(testFile);
+    return true;
+  } catch (e) {
+    console.error(`Folder ${dirPath} is not writable:`, e);
+    return false;
+  }
+}
+
 // Supported extensions by Chromium natively
 const NATIVE_EXTENSIONS = ['.mp4', '.webm', '.ogg', '.mov', '.m4v'];
 
@@ -55,6 +81,7 @@ function createWindow() {
     },
   });
 
+  mainWindow.maximize();
   mainWindow.loadFile('index.html');
   
   // Open devtools in development if needed
@@ -76,7 +103,16 @@ function startVideoServer() {
     }
 
     const urlObj = new URL(req.url, `http://localhost:${SERVER_PORT}`);
-    if (urlObj.pathname === '/video') {
+    if (urlObj.pathname === '/screenshot') {
+      const imgPath = urlObj.searchParams.get('path');
+      if (imgPath && fs.existsSync(imgPath)) {
+        res.writeHead(200, { 'Content-Type': 'image/png' });
+        fs.createReadStream(imgPath).pipe(res);
+      } else {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Image not found.');
+      }
+    } else if (urlObj.pathname === '/video') {
       const filePath = urlObj.searchParams.get('path');
       const startParam = urlObj.searchParams.get('start');
       const startSec = startParam ? parseFloat(startParam) : 0;
@@ -427,7 +463,7 @@ const os = require('os');
 let sessdata = null;
 const downloaderTasks = new Map();
 let activeDownloads = 0;
-const MAX_CONCURRENT_DOWNLOADS = 3;
+let MAX_CONCURRENT_DOWNLOADS = 3;
 
 // 带有 SESSDATA 的 B站请求封装
 function biliFetch(url, options = {}) {
@@ -669,7 +705,11 @@ function mergeAudioVideo(videoPath, audioPath, outputPath) {
       });
       
       ffmpeg.on('error', (err) => {
-        reject(err);
+        if (err.code === 'ENOENT') {
+          reject(new Error('未检测到本地 FFmpeg 依赖！合并音视频轨失败，请在系统中安装 FFmpeg 并加入 PATH 环境变量'));
+        } else {
+          reject(err);
+        }
       });
     });
   });
@@ -694,6 +734,7 @@ function sendTaskProgress(id) {
     status: task.status,
     bytesDownloaded: task.bytesDownloaded,
     bytesTotal: task.bytesTotal,
+    warning: task.warning,
     error: task.error
   });
 }
@@ -717,6 +758,16 @@ async function runDownloadTask(task) {
   const audioTempPath = path.join(tempDir, `${task.id}_audio.m4a`);
   
   try {
+    // 1. 核心依赖检查：若本地 FFmpeg 缺失，立刻报错阻断下载，防止浪费流量
+    if (!checkFFmpegExists()) {
+      throw new Error('未检测到本地 FFmpeg 依赖！合并音视频轨失败，请在系统中安装 FFmpeg 并加入 PATH 环境变量（例如运行 brew install ffmpeg）');
+    }
+
+    // 2. 写入权限检查：若目标路径不可写，则报错阻断
+    if (!checkFolderWritable(task.savePath)) {
+      throw new Error(`下载保存目录不可写或权限不足，目标路径：${task.savePath}。请检查磁盘读写权限或更改下载设置。`);
+    }
+
     const playUrlRes = await fetchBiliPlayurl(task.bvid, task.cid, task.quality);
     if (!playUrlRes) {
       throw new Error('获取下载流地址失败，请重新登录尝试');
@@ -890,7 +941,7 @@ ipcMain.handle('bili-parse-url', async (event, url) => {
 });
 
 ipcMain.handle('bili-start-download', async (event, { episodes, quality, savePath, collectionTitle, collectionType }) => {
-  const baseSavePath = savePath || app.getPath('downloads');
+  let baseSavePath = savePath || app.getPath('downloads');
   let targetSavePath = baseSavePath;
   
   // 如果是分P视频或合集系列，专门为其建立同名子目录，实现归档分类
@@ -899,7 +950,25 @@ ipcMain.handle('bili-start-download', async (event, { episodes, quality, savePat
     targetSavePath = path.join(baseSavePath, folderName);
   }
   
-  fs.mkdirSync(targetSavePath, { recursive: true });
+  let usingFallback = false;
+  let targetPathWritable = checkFolderWritable(targetSavePath);
+  
+  if (!targetPathWritable) {
+    // Attempt fallback to system Downloads directory
+    const systemDownloads = app.getPath('downloads');
+    const fallbackPath = (collectionType && collectionType !== 'single' && collectionTitle)
+      ? path.join(systemDownloads, sanitizeFilename(collectionTitle))
+      : systemDownloads;
+      
+    if (checkFolderWritable(fallbackPath)) {
+      targetSavePath = fallbackPath;
+      usingFallback = true;
+      console.warn(`Original save path ${savePath} not writable. Fell back to default downloads directory: ${targetSavePath}`);
+    } else {
+      throw new Error(`下载开始失败！您指定的保存目录 ${targetSavePath} 不存在或没有写入权限，且系统默认下载文件夹也无法访问。请检查磁盘权限或重新设置下载目录。`);
+    }
+  }
+
   const taskIds = [];
   
   for (const item of episodes) {
@@ -915,6 +984,7 @@ ipcMain.handle('bili-start-download', async (event, { episodes, quality, savePat
       progress: 0,
       speed: 0,
       status: 'pending',
+      warning: usingFallback ? '提示：设定的下载目录无写入权限，已自动保存至系统默认下载目录。' : null,
       error: null,
       bytesDownloaded: 0,
       bytesTotal: 0,
@@ -942,6 +1012,34 @@ ipcMain.handle('bili-cancel-task', async (event, taskId) => {
   return false;
 });
 
+ipcMain.handle('bili-pause-all', async () => {
+  for (const task of downloaderTasks.values()) {
+    if (task.status === 'downloading' || task.status === 'merging' || task.status === 'pending') {
+      task.controller.abort();
+      task.status = 'paused';
+    }
+  }
+  for (const id of downloaderTasks.keys()) {
+    sendTaskProgress(id);
+  }
+  return true;
+});
+
+ipcMain.handle('bili-start-all', async () => {
+  for (const task of downloaderTasks.values()) {
+    if (task.status === 'paused' || task.status === 'failed') {
+      task.controller = new AbortController();
+      task.status = 'pending';
+      task.error = null;
+    }
+  }
+  for (const id of downloaderTasks.keys()) {
+    sendTaskProgress(id);
+  }
+  processQueue();
+  return true;
+});
+
 ipcMain.handle('bili-get-tasks', () => {
   const list = [];
   for (const task of downloaderTasks.values()) {
@@ -956,10 +1054,161 @@ ipcMain.handle('bili-get-tasks', () => {
       status: task.status,
       bytesDownloaded: task.bytesDownloaded,
       bytesTotal: task.bytesTotal,
+      warning: task.warning,
       error: task.error
     });
   }
   return list;
+});
+
+ipcMain.handle('select-download-directory', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory']
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+  return result.filePaths[0];
+});
+
+ipcMain.handle('set-max-downloads', (event, val) => {
+  if (typeof val === 'number') {
+    MAX_CONCURRENT_DOWNLOADS = Math.max(1, Math.min(5, val));
+  }
+  return MAX_CONCURRENT_DOWNLOADS;
+});
+
+ipcMain.handle('get-max-downloads', () => {
+  return MAX_CONCURRENT_DOWNLOADS;
+});
+
+// ==========================================
+// 视频截屏与数据库管理 (Screenshot & DB)
+// ==========================================
+const SCREENSHOTS_DB_FILE = path.join(app.getPath('userData'), 'screenshots-db.json');
+const SCREENSHOTS_DIR = path.join(app.getPath('userData'), 'Screenshots');
+
+function getScreenshotsDB() {
+  if (fs.existsSync(SCREENSHOTS_DB_FILE)) {
+    try {
+      return JSON.parse(fs.readFileSync(SCREENSHOTS_DB_FILE, 'utf8'));
+    } catch (e) {
+      console.error('Failed to parse screenshots db:', e);
+    }
+  }
+  return {
+    categories: [{ id: 'uncategorized', name: '未分类' }],
+    screenshots: []
+  };
+}
+
+function saveScreenshotsDB(db) {
+  try {
+    fs.mkdirSync(path.dirname(SCREENSHOTS_DB_FILE), { recursive: true });
+    fs.writeFileSync(SCREENSHOTS_DB_FILE, JSON.stringify(db, null, 2), 'utf8');
+    return true;
+  } catch (e) {
+    console.error('Failed to save screenshots db:', e);
+    return false;
+  }
+}
+
+ipcMain.handle('get-screenshots-db', () => {
+  return getScreenshotsDB();
+});
+
+ipcMain.handle('save-screenshots-db', (event, db) => {
+  return saveScreenshotsDB(db);
+});
+
+ipcMain.handle('delete-directory-folder', async (event, dirPath) => {
+  try {
+    if (dirPath && fs.existsSync(dirPath)) {
+      fs.rmSync(dirPath, { recursive: true, force: true });
+      return true;
+    }
+  } catch (err) {
+    console.error('Failed to delete directory:', err);
+  }
+  return false;
+});
+
+ipcMain.handle('save-screenshot', async (event, { base64Data, videoPath, videoName, playbackTime, categoryId }) => {
+  try {
+    fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
+    
+    // Clean video name for safe filename
+    const cleanVideoName = videoName.replace(/[\\/:*?"<>|]/g, '_').trim();
+    // Helper to format time
+    const formatTimestamp = (sec) => {
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = Math.floor(sec % 60);
+      return [h, m, s].map(v => String(v).padStart(2, '0')).join('-');
+    };
+    
+    const timeStr = formatTimestamp(playbackTime);
+    const filename = `${cleanVideoName}_${timeStr}_${Date.now().toString().slice(-4)}.png`;
+    const fullPath = path.join(SCREENSHOTS_DIR, filename);
+    
+    fs.writeFileSync(fullPath, Buffer.from(base64Data, 'base64'));
+    
+    // Update DB
+    const db = getScreenshotsDB();
+    const newScreenshot = {
+      id: 'shot_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      filename: filename,
+      relativePath: `Screenshots/${filename}`,
+      absolutePath: fullPath,
+      videoName: videoName,
+      videoPath: videoPath,
+      playbackTime: playbackTime,
+      categoryId: categoryId || 'uncategorized',
+      createdAt: Date.now()
+    };
+    
+    db.screenshots.push(newScreenshot);
+    saveScreenshotsDB(db);
+    
+    return { success: true, screenshot: newScreenshot };
+  } catch (err) {
+    console.error('Error saving screenshot:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('delete-screenshot-file', async (event, absolutePath) => {
+  try {
+    if (fs.existsSync(absolutePath)) {
+      fs.unlinkSync(absolutePath);
+      return true;
+    }
+  } catch (err) {
+    console.error('Error deleting screenshot file:', err);
+  }
+  return false;
+});
+
+ipcMain.handle('open-image-in-finder', async (event, absolutePath) => {
+  if (absolutePath && fs.existsSync(absolutePath)) {
+    shell.showItemInFolder(absolutePath);
+    return true;
+  }
+  return false;
+});
+
+ipcMain.handle('copy-image-to-clipboard', async (event, absolutePath) => {
+  try {
+    if (absolutePath && fs.existsSync(absolutePath)) {
+      const { clipboard, nativeImage } = require('electron');
+      const image = nativeImage.createFromPath(absolutePath);
+      clipboard.writeImage(image);
+      return true;
+    }
+  } catch (e) {
+    console.error('Failed to copy image to clipboard:', e);
+  }
+  return false;
 });
 
 // App Lifecycle
