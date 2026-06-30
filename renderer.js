@@ -4474,6 +4474,28 @@ function initNotesFeature() {
 
   // Toggle between View mode and Edit mode inside note detail pane
   function toggleEditorMode(isEdit) {
+    const isMaterial = currentEditingNote && currentEditingNote.isMaterial;
+    const editorTitleRow = document.querySelector('.editor-title-row');
+    const editorMetaInfo = document.querySelector('.editor-meta-info');
+
+    if (isMaterial) {
+      if (editorTitleRow) editorTitleRow.classList.add('hidden');
+      if (editorMetaInfo) editorMetaInfo.classList.add('hidden');
+      if (btnEditNote) btnEditNote.classList.add('hidden');
+      if (btnInsertScreenshot) btnInsertScreenshot.classList.add('hidden');
+      if (btnSaveNote) btnSaveNote.classList.add('hidden');
+      if (btnToggleAssociate) btnToggleAssociate.classList.add('hidden');
+      if (noteCategorySelect) noteCategorySelect.disabled = true;
+      
+      if (editorLeftPane) editorLeftPane.classList.add('hidden');
+      if (markdownPreviewHeader) markdownPreviewHeader.classList.add('hidden');
+      return;
+    }
+
+    // Normal notes (non-material) - restore visibility of title row and meta info
+    if (editorTitleRow) editorTitleRow.classList.remove('hidden');
+    if (editorMetaInfo) editorMetaInfo.classList.remove('hidden');
+
     if (isEdit) {
       if (btnEditNote) btnEditNote.classList.add('hidden');
       if (btnInsertScreenshot) btnInsertScreenshot.classList.remove('hidden');
@@ -4650,6 +4672,7 @@ function initNotesFeature() {
           categoryId: selectedNoteCategory !== 'all' ? selectedNoteCategory : 'uncategorized',
           videoPath: currentFilePath || null,
           videoName: currentFilePath ? path.basename(currentFilePath) : null,
+          isMaterial: true,
           createdAt: Date.now(),
           updatedAt: Date.now()
         };
