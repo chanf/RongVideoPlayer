@@ -4144,6 +4144,7 @@ function initNotesFeature() {
 
   // DOM Notes elements
   const btnAddNote = document.getElementById('btn-add-note');
+  const btnUploadMaterial = document.getElementById('btn-upload-material');
   const notesSearchInput = document.getElementById('notes-search-input');
   const notesCategoriesList = document.getElementById('notes-categories-list');
   const notesVideosList = document.getElementById('notes-videos-list');
@@ -4593,6 +4594,67 @@ function initNotesFeature() {
   if (btnEditNote) {
     btnEditNote.addEventListener('click', () => {
       toggleEditorMode(true);
+    });
+  }
+
+  // Open attachment file helper exposed globally so HTML string onclick can call it
+  window.openAttachmentFile = (filePath) => {
+    ipcRenderer.invoke('open-path', filePath);
+  };
+
+  // Upload Material button
+  if (btnUploadMaterial) {
+    btnUploadMaterial.addEventListener('click', async () => {
+      try {
+        const material = await ipcRenderer.invoke('upload-material');
+        if (!material) return; // user cancelled selection
+
+        let noteContent = '';
+        const nameWithoutExt = material.name.includes('.') ? material.name.substring(0, material.name.lastIndexOf('.')) : material.name;
+        const extLower = material.extension.toLowerCase();
+        
+        if (extLower === '.md' || extLower === '.txt') {
+          noteContent = material.text || '';
+        } else if (['.png', '.jpg', '.jpeg'].includes(extLower)) {
+          const streamUrl = `http://localhost:30032/screenshot?path=${encodeURIComponent(material.absolutePath)}`;
+          noteContent = `\n![${material.name}](${streamUrl})\n`;
+        } else {
+          const sizeKb = (material.size / 1024).toFixed(1);
+          const sizeMb = (material.size / 1024 / 1024).toFixed(2);
+          
+          noteContent = `### 📎 附件资料：${material.name}\n\n`;
+          noteContent += `- **文件类型**: ${extLower.substring(1).toUpperCase()} 文档\n`;
+          noteContent += `- **文件大小**: ${sizeMb} MB (${sizeKb} KB)\n`;
+          noteContent += `- **存储路径**: \`${material.absolutePath}\`\n\n`;
+          noteContent += `***\n\n`;
+          noteContent += `<div class="attachment-box" onclick="window.openAttachmentFile('${material.absolutePath.replace(/\\/g, '\\\\')}')" style="cursor: pointer;">\n`;
+          noteContent += `  <div class="attachment-icon">📎</div>\n`;
+          noteContent += `  <div class="attachment-info">\n`;
+          noteContent += `    <div class="attachment-name">${material.name}</div>\n`;
+          noteContent += `    <div class="attachment-size">${sizeMb} MB</div>\n`;
+          noteContent += `  </div>\n`;
+          noteContent += `  <button class="btn-open-attachment btn-primary">点击打开文档</button>\n`;
+          noteContent += `</div>\n`;
+        }
+
+        const newNote = {
+          id: 'note_material_' + Date.now(),
+          title: nameWithoutExt || material.name,
+          content: noteContent,
+          categoryId: selectedNoteCategory !== 'all' ? selectedNoteCategory : 'uncategorized',
+          videoPath: currentFilePath || null,
+          videoName: currentFilePath ? path.basename(currentFilePath) : null,
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        };
+
+        // Open in View Mode so they can see and click the attachment card!
+        openNoteInEditor(newNote, false);
+
+      } catch (e) {
+        console.error('Failed to upload/import material:', e);
+        alert('上传资料失败：' + e.message);
+      }
     });
   }
 

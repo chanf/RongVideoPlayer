@@ -1266,6 +1266,66 @@ ipcMain.handle('save-notes-db', (event, db) => {
   return saveNotesDB(db);
 });
 
+ipcMain.handle('upload-material', async () => {
+  const result = await dialog.showOpenDialog({
+    title: '选择要上传的学习资料',
+    properties: ['openFile'],
+    filters: [
+      { name: '所有支持类型', extensions: ['md', 'txt', 'pdf', 'docx', 'doc', 'pptx', 'ppt', 'xlsx', 'xls', 'png', 'jpg', 'jpeg'] },
+      { name: 'Markdown文档', extensions: ['md'] },
+      { name: '文本文档', extensions: ['txt'] },
+      { name: 'PDF文档', extensions: ['pdf'] },
+      { name: 'Word文档', extensions: ['docx', 'doc'] },
+      { name: 'PPT幻灯片', extensions: ['pptx', 'ppt'] },
+      { name: 'Excel表格', extensions: ['xlsx', 'xls'] },
+      { name: '图片文件', extensions: ['png', 'jpg', 'jpeg'] }
+    ]
+  });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+
+  const srcPath = result.filePaths[0];
+  const name = path.basename(srcPath);
+  const ext = path.extname(srcPath).toLowerCase();
+  
+  const uploadDir = path.join(app.getPath('userData'), 'UploadedMaterials');
+  fs.mkdirSync(uploadDir, { recursive: true });
+  
+  const destName = `${Date.now()}_${name}`;
+  const destPath = path.join(uploadDir, destName);
+  
+  try {
+    fs.copyFileSync(srcPath, destPath);
+    const stats = fs.statSync(destPath);
+    
+    let text = null;
+    if (ext === '.md' || ext === '.txt') {
+      text = fs.readFileSync(destPath, 'utf8');
+    }
+    
+    return {
+      name,
+      extension: ext,
+      absolutePath: destPath,
+      size: stats.size,
+      text
+    };
+  } catch (e) {
+    console.error('Failed to upload material:', e);
+    throw e;
+  }
+});
+
+ipcMain.handle('open-path', async (event, targetPath) => {
+  if (targetPath && fs.existsSync(targetPath)) {
+    shell.openPath(targetPath);
+    return true;
+  }
+  return false;
+});
+
 // App Lifecycle
 app.whenReady().then(() => {
   startVideoServer();
