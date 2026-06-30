@@ -3169,6 +3169,17 @@ body[data-theme="ningzhi"] .tree-cat-badge.inherited {
   gap: 16px;
   box-sizing: border-box;
   flex-shrink: 0;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s ease, opacity 0.2s ease, border-right-width 0.3s ease;
+}
+
+.notes-sidebar.collapsed {
+  width: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  border-right-width: 0 !important;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
 }
 
 .notes-search-box input {

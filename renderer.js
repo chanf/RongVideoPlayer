@@ -4143,6 +4143,8 @@ function initNotesFeature() {
   const btnToggleSettings = document.getElementById('btn-toggle-settings');
 
   // DOM Notes elements
+  const btnToggleNotesSidebar = document.getElementById('btn-toggle-notes-sidebar');
+  const notesSidebar = document.querySelector('.notes-sidebar');
   const btnAddNote = document.getElementById('btn-add-note');
   const btnUploadMaterial = document.getElementById('btn-upload-material');
   const notesSearchInput = document.getElementById('notes-search-input');
@@ -4176,6 +4178,14 @@ function initNotesFeature() {
   const insertShotCatSelect = document.getElementById('insert-shot-cat-select');
   const insertShotSearch = document.getElementById('insert-shot-search');
   const insertShotGrid = document.getElementById('insert-shot-grid');
+
+  // Sidebar Toggling
+  if (btnToggleNotesSidebar && notesSidebar) {
+    btnToggleNotesSidebar.addEventListener('click', () => {
+      notesSidebar.classList.toggle('collapsed');
+      btnToggleNotesSidebar.classList.toggle('active');
+    });
+  }
 
   // Setup Mermaid
   if (typeof mermaid !== 'undefined') {
