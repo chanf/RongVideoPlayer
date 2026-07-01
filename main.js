@@ -5,42 +5,86 @@ const http = require('http');
 const crypto = require('crypto');
 const { spawn, exec, execFile } = require('child_process');
 
+// electron-builder's `portable` target injects PORTABLE_EXECUTABLE_DIR at launch.
+// Redirect userData there so all data (history, screenshots, notes, materials, PdfCache)
+// lives beside the .exe — true green-portable behavior. Must run before any
+// app.getPath('userData') call.
+if (process.env.PORTABLE_EXECUTABLE_DIR) {
+  app.setPath('userData', path.join(process.env.PORTABLE_EXECUTABLE_DIR, 'data'));
+}
+
 let mainWindow;
 let videoServer;
 const SERVER_PORT = 30032;
 const HISTORY_FILE = path.join(app.getPath('userData'), 'playback-history.json');
 
-// Paths to ffmpeg and ffprobe (dynamically resolved to prevent issues on other machines)
+// Platform constants used across binary resolution, error messages, and feature gating.
+const IS_WIN = process.platform === 'win32';
+const IS_MAC = process.platform === 'darwin';
+// The native PDF helper is platform-specific: pdf_render_mac (Apple PDFKit) on macOS,
+// pdf_win.exe (pdfium) on Windows. Same CLI contract — see pdf_render_mac.swift.
+const PDF_BIN_NAME = IS_WIN ? 'pdf_win' : 'pdf_render_mac';
+
+// Resolve ffmpeg / ffprobe / native PDF helper across dev, packaged, and system PATH installs.
 function resolveBinaryPath(name) {
+  const exeName = IS_WIN ? (name.endsWith('.exe') ? name : `${name}.exe`) : name;
+
+  // 1. PATH lookup via `where` (win) / `which` (posix). `where` may return multiple lines — take the first.
   try {
-    const whichCmd = process.platform === 'win32' ? 'where' : 'which';
-    const pathStr = require('child_process').execSync(`${whichCmd} ${name}`, { stdio: [] }).toString().trim();
-    if (pathStr && fs.existsSync(pathStr)) {
-      return pathStr;
+    const whichCmd = IS_WIN ? 'where' : 'which';
+    const out = require('child_process').execSync(`${whichCmd} ${name}`, { stdio: [], timeout: 3000 }).toString().trim();
+    const first = out.split(/\r?\n/)[0];
+    if (first && fs.existsSync(first)) {
+      return first;
     }
   } catch (e) {}
 
-  const commonPaths = [
-    `/usr/local/bin/${name}`,
-    `/opt/homebrew/bin/${name}`,
-    `/usr/bin/${name}`,
-    process.resourcesPath ? path.join(process.resourcesPath, 'bin', name) : null,
-    path.join(__dirname, 'bin', name),
-    path.join(__dirname, '..', 'bin', name)
+  // 2. Bundled locations — work both in dev (bin/ in repo root) and packaged (resources/bin/).
+  const bundled = [
+    process.resourcesPath ? path.join(process.resourcesPath, 'bin', exeName) : null,
+    path.join(__dirname, 'bin', exeName),
+    path.join(__dirname, '..', 'bin', exeName),
   ].filter(Boolean);
-
-  for (const p of commonPaths) {
+  for (const p of bundled) {
     if (fs.existsSync(p)) {
       return p;
     }
   }
 
-  return name;
+  // 3. Common system install locations.
+  if (IS_WIN) {
+    const roots = [
+      process.env.PROGRAMFILES,
+      process.env['PROGRAMFILES(X86)'],
+      process.env.LOCALAPPDATA,
+      process.env.CHOCOLATEYINSTALL && path.join(process.env.CHOCOLATEYINSTALL, 'bin'),
+      process.env.SCOOP && path.join(process.env.SCOOP, 'shims'),
+    ].filter(Boolean);
+    const subPaths = ['bin', 'ffmpeg/bin', 'ffmpeg/bin/x64', 'shared/bin'];
+    for (const root of roots) {
+      for (const sub of subPaths) {
+        const cand = path.join(root, sub, exeName);
+        if (fs.existsSync(cand)) {
+          return cand;
+        }
+      }
+    }
+  } else {
+    const posix = [`/usr/local/bin/${name}`, `/opt/homebrew/bin/${name}`, `/usr/bin/${name}`];
+    for (const p of posix) {
+      if (fs.existsSync(p)) {
+        return p;
+      }
+    }
+  }
+
+  // 4. Last resort: bare name, lets spawn fall back to PATH at runtime.
+  return exeName;
 }
 
 const FFMPEG_PATH = resolveBinaryPath('ffmpeg');
 const FFPROBE_PATH = resolveBinaryPath('ffprobe');
-const PDF_RENDERER_PATH = resolveBinaryPath('pdf_render_mac');
+const PDF_RENDERER_PATH = resolveBinaryPath(PDF_BIN_NAME);
 
 function checkFFmpegExists() {
   try {
@@ -72,21 +116,26 @@ function checkFolderWritable(dirPath) {
 const NATIVE_EXTENSIONS = ['.mp4', '.webm', '.ogg', '.mov', '.m4v'];
 
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  const windowOptions = {
     width: 1200,
     height: 800,
     title: 'Rong VideoPlayer',
-    titleBarStyle: 'hidden',
-    trafficLightPosition: { x: 15, y: 15 },
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false, // For simplicity of development
     },
-  });
+  };
+  // macOS: hide the system title bar and relocate traffic lights to overlay the app.
+  // Windows: keep the native title bar (close/min/max buttons supplied by the OS).
+  if (IS_MAC) {
+    windowOptions.titleBarStyle = 'hidden';
+    windowOptions.trafficLightPosition = { x: 15, y: 15 };
+  }
+  mainWindow = new BrowserWindow(windowOptions);
 
   mainWindow.maximize();
   mainWindow.loadFile('index.html');
-  
+
   // Open devtools in development if needed
   // mainWindow.webContents.openDevTools();
 }
@@ -302,19 +351,27 @@ function checkNeedsTranscode(filePath, probeData) {
 // Probe video info using ffprobe
 function probeVideoInfo(filePath) {
   return new Promise((resolve) => {
-    exec(`"${FFPROBE_PATH}" -v error -print_format json -show_format -show_streams "${filePath}"`, (err, stdout) => {
-      if (err) {
-        console.error('ffprobe error:', err);
-        return resolve(null);
+    // Use execFile with array args so paths containing ", &, $, spaces, or non-ASCII
+    // are passed verbatim — string-form `exec` goes through cmd.exe/shell and breaks
+    // on such characters (notably on Windows).
+    execFile(
+      FFPROBE_PATH,
+      ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', filePath],
+      { maxBuffer: 10 * 1024 * 1024 },
+      (err, stdout) => {
+        if (err) {
+          console.error('ffprobe error:', err);
+          return resolve(null);
+        }
+        try {
+          const data = JSON.parse(stdout);
+          resolve(data);
+        } catch (e) {
+          console.error('Failed to parse ffprobe JSON:', e);
+          resolve(null);
+        }
       }
-      try {
-        const data = JSON.parse(stdout);
-        resolve(data);
-      } catch (e) {
-        console.error('Failed to parse ffprobe JSON:', e);
-        resolve(null);
-      }
-    });
+    );
   });
 }
 
@@ -690,7 +747,8 @@ function probeHEVC(videoPath) {
   });
 }
 
-// 合并视频与音频轨，在 macOS 上强制注入 hvc1 标志确保原生播放支持
+// 合并视频与音频轨。对 HEVC 源注入 hvc1 标志，确保 macOS QuickTime / Finder 预览
+// 与 Windows Media Player 等偏好 mp4 stub hvc1 的播放器能直接预览。
 function mergeAudioVideo(videoPath, audioPath, outputPath) {
   return new Promise((resolve, reject) => {
     probeHEVC(videoPath).then((isHEVC) => {
@@ -772,7 +830,7 @@ async function runDownloadTask(task) {
   try {
     // 1. 核心依赖检查：若本地 FFmpeg 缺失，立刻报错阻断下载，防止浪费流量
     if (!checkFFmpegExists()) {
-      throw new Error('未检测到本地 FFmpeg 依赖！合并音视频轨失败，请在系统中安装 FFmpeg 并加入 PATH 环境变量（例如运行 brew install ffmpeg）');
+      throw new Error(`未检测到本地 FFmpeg 依赖！合并音视频轨失败，请在系统中安装 FFmpeg 并加入 PATH 环境变量（例如运行 ${IS_WIN ? 'winget install ffmpeg 或 choco install ffmpeg' : 'brew install ffmpeg'}）`);
     }
 
     // 2. 写入权限检查：若目标路径不可写，则报错阻断

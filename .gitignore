@@ -23,3 +23,39 @@ dist/
 out/
 build/icon.iconset/
 build/generate_icns.sh # The generator script is fine to keep, but we can keep it tracked. Let's make sure only build outputs are ignored.
+
+# Windows native binary build artifacts.
+# NOTE: bin/pdf_win.exe and bin/pdfium.dll are COMMITTED on purpose
+# (the built PDF helper + its pdfium runtime), exactly like bin/ocr_mac
+# and bin/pdf_render_mac. Do not ignore them. Only the staging dir and
+# MSVC intermediates are ignored.
+bin/win-build/
+
+# MSVC compiler/linker intermediates
+*.obj
+*.pdb
+*.exp
+*.ilk
+*.pch
+*.idb
+*.tlog
+*.lastbuildstate
+*.unsuccessfulbuild
+*.aps
+*.iobj
+*.ipdb
+
+# Visual Studio IDE workspace files (created when opening the repo in VS 2022,
+# which the Windows build requires for the MSVC toolchain)
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Windows shell / Explorer cruft
+desktop.ini
+*.lnk
+
+# Local agent guidance — kept as a local file, not shared via the repo
+CLAUDE.md

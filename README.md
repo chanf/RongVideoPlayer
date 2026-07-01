@@ -209,6 +209,41 @@ npm run dist
 
 构建输出位于 `dist/` 目录。
 
+### Windows 版本构建
+
+Windows 版产出 portable 单文件 `.exe`（约 78 MB），双击即用，数据写入 exe 同级 `data/` 目录，绿色便携。完整的编译环境搭建、依赖下载地址、环境变量配置和踩坑记录见 **[Docs/windows_build_experience.md](./Docs/windows_build_experience.md)**。
+
+**前置依赖**
+
+- Node.js v18 或更高版本。
+- Visual Studio 2022（勾选「使用 C++ 的桌面开发」工作负载，用于编译原生 PDF 辅助程序 pdfium）。
+- FFmpeg，要求 `ffmpeg.exe` 和 `ffprobe.exe` 能在 `PATH` 中找到（`winget install Gyan.FFmpeg` 或 `choco install ffmpeg`）。
+
+**构建步骤**
+
+```cmd
+:: 1. 设置国内镜像（直连 GitHub / electron CDN 基本超时）
+set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
+set ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/
+
+:: 2. 安装 JS 依赖
+npm install
+
+:: 3. 编译原生 PDF 辅助程序（必须先于打包，产物 bin\pdf_win.exe + bin\pdfium.dll）
+bin\build_pdf_win.cmd
+
+:: 4. 打 Windows portable 包
+npm run dist:win
+```
+
+产物：`dist/Rong VideoPlayer 1.0.0.exe`。
+
+**注意事项**
+
+- 输出未签名，首次运行会有 SmartScreen 警告，需「更多信息」→「仍要运行」放行。
+- portable 版本运行时会在 exe 同级自动生成 `data/` 目录存放全部数据。
+- 项目从 macOS 拷到 Windows 后，目录里可能残留 `._*`、`.DS_Store`、`__MACOSX` 等垃圾文件，可用根目录的 `clean_mac_cruft.bat` 递归清理。
+
 ---
 
 ## 常用快捷键
@@ -232,6 +267,8 @@ npm run dist
 
 - `Docs/screenshot_management_design.md`：视频截图与截图库管理设计。
 - `Docs/video_sharing_design.md`：在线视频分享社区设计。
+- `Docs/pdf_native_reader_development_experience.md`：PDF 原生阅读器开发经验。
+- `Docs/windows_build_experience.md`：Windows 客户端构建全流程经验（环境搭建、镜像配置、踩坑记录）。
 - `CLAUDE.md`：面向代码协作 Agent 的项目结构和开发约定说明。
 
 ---
