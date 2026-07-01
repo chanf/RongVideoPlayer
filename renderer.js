@@ -4176,6 +4176,25 @@ function initNotesFeature() {
   const notePreviewContent = document.getElementById('note-preview-content');
   const editorLeftPane = document.getElementById('editor-left-pane');
   const markdownPreviewHeader = document.getElementById('markdown-preview-header');
+  const editorActions = document.querySelector('.editor-actions');
+  let materialCategoryControl = null;
+  let materialCategorySelect = null;
+
+  if (editorActions && btnDeleteNote) {
+    materialCategoryControl = document.createElement('label');
+    materialCategoryControl.className = 'material-category-control hidden';
+    materialCategoryControl.title = '设置笔记分类';
+    materialCategoryControl.innerHTML = `
+      <span>分类</span>
+      <select data-role="material-category-select"></select>
+    `;
+    materialCategorySelect = materialCategoryControl.querySelector('[data-role="material-category-select"]');
+    editorActions.insertBefore(materialCategoryControl, btnDeleteNote);
+
+    materialCategorySelect.addEventListener('change', async () => {
+      await saveCurrentMaterialNoteCategory(materialCategorySelect.value);
+    });
+  }
 
   // Insert Screenshot Modal Elements
   const insertScreenshotModal = document.getElementById('insert-screenshot-modal');
@@ -4469,6 +4488,7 @@ function initNotesFeature() {
       card.className = 'note-card';
       const pdfInfo = extractPdfMaterialInfo(note);
       const imageUrl = !pdfInfo ? extractNoteImageUrl(note) : null;
+      const isImageMaterial = Boolean(note.isMaterial && imageUrl && !pdfInfo);
       let pdfThumbContainer = null;
 
       if (pdfInfo) {
@@ -4476,6 +4496,7 @@ function initNotesFeature() {
         pdfThumbContainer = createNoteCardThumbnail('pdf');
         card.appendChild(pdfThumbContainer);
       } else if (imageUrl) {
+        if (isImageMaterial) card.classList.add('image-material-note-card');
         const thumbContainer = createNoteCardThumbnail('image');
         const img = document.createElement('img');
         img.src = imageUrl;
@@ -4483,15 +4504,19 @@ function initNotesFeature() {
         card.appendChild(thumbContainer);
       }
 
-      const title = document.createElement('h3');
-      title.textContent = note.title || '无标题笔记';
-      card.appendChild(title);
-      
-      // Excerpt (strip markdown syntax briefly for preview)
-      const excerpt = document.createElement('div');
-      excerpt.className = 'note-card-excerpt';
-      excerpt.textContent = createNoteExcerpt(note, pdfInfo);
-      card.appendChild(excerpt);
+      if (!isImageMaterial) {
+        const title = document.createElement('h3');
+        title.textContent = note.title || '无标题笔记';
+        card.appendChild(title);
+      }
+
+      if (!isImageMaterial && !pdfInfo) {
+        // Excerpt (strip markdown syntax briefly for preview)
+        const excerpt = document.createElement('div');
+        excerpt.className = 'note-card-excerpt';
+        excerpt.textContent = createNoteExcerpt(note, pdfInfo);
+        card.appendChild(excerpt);
+      }
       
       // Meta row
       const meta = document.createElement('div');
@@ -4554,15 +4579,32 @@ function initNotesFeature() {
     return note.content.includes('pdf-native-reader') || note.content.includes('pdf-container');
   }
 
+  function isImageMaterialNote(note) {
+    if (!note || !note.isMaterial || isPdfMaterialNote(note)) return false;
+    return Boolean(extractNoteImageUrl(note));
+  }
+
+  function syncMaterialCategoryControl(visible) {
+    if (!materialCategoryControl || !materialCategorySelect) return;
+
+    materialCategoryControl.classList.toggle('hidden', !visible);
+    if (!visible) return;
+
+    materialCategorySelect.innerHTML = createPdfCategoryOptions(currentEditingNote?.categoryId || 'uncategorized');
+    materialCategorySelect.value = currentEditingNote?.categoryId || 'uncategorized';
+  }
+
   function toggleEditorMode(isEdit) {
     const isMaterial = currentEditingNote && currentEditingNote.isMaterial;
     const isPdfMaterial = isPdfMaterialNote(currentEditingNote);
+    const isImageMaterial = isImageMaterialNote(currentEditingNote);
     const editorTitleRow = document.querySelector('.editor-title-row');
     const editorMetaInfo = document.querySelector('.editor-meta-info');
 
     if (noteEditorView) {
       noteEditorView.classList.toggle('pdf-reading-mode', isPdfMaterial);
     }
+    syncMaterialCategoryControl(isImageMaterial);
 
     if (isMaterial) {
       if (editorTitleRow) {
@@ -4585,6 +4627,7 @@ function initNotesFeature() {
     }
 
     // Normal notes (non-material) - restore visibility of title row and meta info
+    syncMaterialCategoryControl(false);
     if (noteEditorView) noteEditorView.classList.remove('pdf-reading-mode');
     if (editorTitleRow) editorTitleRow.classList.remove('hidden');
     if (editorMetaInfo) editorMetaInfo.classList.remove('hidden');
@@ -4709,10 +4752,11 @@ function initNotesFeature() {
     }).join('');
   }
 
-  async function saveCurrentPdfNoteCategory(categoryId) {
+  async function saveCurrentMaterialNoteCategory(categoryId) {
     if (!currentEditingNote) return;
 
     currentEditingNote.categoryId = categoryId || 'uncategorized';
+    currentEditingNote.updatedAt = Date.now();
     const existingIdx = notesDB.notes.findIndex(n => n.id === currentEditingNote.id);
     if (existingIdx !== -1) {
       notesDB.notes[existingIdx] = currentEditingNote;
@@ -4721,9 +4765,16 @@ function initNotesFeature() {
     if (noteCategorySelect) {
       noteCategorySelect.value = currentEditingNote.categoryId;
     }
+    if (materialCategorySelect) {
+      materialCategorySelect.value = currentEditingNote.categoryId;
+    }
 
     await ipcRenderer.invoke('save-notes-db', notesDB);
     renderSidebarFilters();
+  }
+
+  async function saveCurrentPdfNoteCategory(categoryId) {
+    await saveCurrentMaterialNoteCategory(categoryId);
   }
 
   async function hydratePdfReaders(container) {

@@ -3296,6 +3296,9 @@ body[data-theme="ningzhi"] .tree-cat-badge.inherited {
 .note-card:hover .image-note-thumbnail img {
   transform: scale(1.05);
 }
+.image-material-note-card .note-card-meta {
+  margin-top: 0;
+}
 .pdf-note-thumbnail {
   height: 150px;
   padding: 0;
@@ -3416,6 +3419,34 @@ body[data-theme="ningzhi"] .tree-cat-badge.inherited {
   background: transparent;
   color: var(--text-main);
   outline: none;
+}
+
+.material-category-control {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  font-size: 12px;
+  box-sizing: border-box;
+}
+
+.material-category-control select {
+  max-width: 130px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  color: var(--text-main);
+  outline: none;
+  font-size: 12px;
+}
+
+.material-category-control select option {
+  color: #111827;
 }
 
 .editor-workspace {
