@@ -26,11 +26,14 @@ let folderCategories = {}; // { [folderPath]: categoryId }
 let mainViewerToken = 0;
 let mainPdfState = null;
 let mainPdfResizeObserver = null;
+let mainDocumentState = null;
+let mainDocumentResizeObserver = null;
 let hasPersistedExpandedFolders = false;
 
 const VIDEO_EXTENSIONS = ['.mp4', '.mkv', '.rmvb', '.avi', '.mov', '.flv', '.wmv', '.webm', '.m4v', '.ts', '.3gp'];
 const PDF_EXTENSIONS = ['.pdf'];
 const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.svg', '.avif', '.tif', '.tiff'];
+const DOCUMENT_EXTENSIONS = ['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'];
 const MAIN_PDF_PAGE_MODE_STORAGE_KEY = 'rong_main_pdf_page_mode';
 
 function getMediaKind(filePath, fallbackKind = null) {
@@ -39,6 +42,7 @@ function getMediaKind(filePath, fallbackKind = null) {
   if (VIDEO_EXTENSIONS.includes(ext)) return 'video';
   if (PDF_EXTENSIONS.includes(ext)) return 'pdf';
   if (IMAGE_EXTENSIONS.includes(ext)) return 'image';
+  if (DOCUMENT_EXTENSIONS.includes(ext)) return 'document';
   return null;
 }
 
@@ -66,6 +70,25 @@ const mainImageTitle = document.getElementById('main-image-title');
 const mainImageStatus = document.getElementById('main-image-status');
 const btnMainImageFit = document.getElementById('btn-main-image-fit');
 const btnMainImageOpen = document.getElementById('btn-main-image-open');
+const mainDocumentViewer = document.getElementById('main-document-viewer');
+const mainDocumentBadge = document.getElementById('main-document-badge');
+const mainDocumentTitle = document.getElementById('main-document-title');
+const mainDocumentStatus = document.getElementById('main-document-status');
+const mainDocumentStage = document.getElementById('main-document-stage');
+const mainDocumentReader = document.getElementById('main-document-reader');
+const mainDocumentPageViewport = document.getElementById('main-document-page-viewport');
+const mainDocumentPagePaper = document.getElementById('main-document-page-paper');
+const mainDocumentPageBody = document.getElementById('main-document-page-body');
+const mainDocumentPageNumber = document.getElementById('main-document-page-number');
+const mainDocumentPageInput = document.getElementById('main-document-page-input');
+const mainDocumentPageCount = document.getElementById('main-document-page-count');
+const mainDocumentZoomLabel = document.getElementById('main-document-zoom-label');
+const mainDocumentPreviewShell = document.getElementById('main-document-preview-shell');
+const mainDocumentPreview = document.getElementById('main-document-preview');
+const mainDocumentPlaceholder = document.getElementById('main-document-placeholder');
+const mainDocumentPlaceholderIcon = document.getElementById('main-document-placeholder-icon');
+const btnMainDocumentOpen = document.getElementById('btn-main-document-open');
+const btnMainDocumentRefresh = document.getElementById('btn-main-document-refresh');
 const mainPdfViewer = document.getElementById('main-pdf-viewer');
 const mainPdfTitle = document.getElementById('main-pdf-title');
 const mainPdfStatus = document.getElementById('main-pdf-status');
@@ -299,6 +322,39 @@ function setupEventListeners() {
   if (btnMainImageFit) {
     btnMainImageFit.addEventListener('click', resetMainImageFit);
   }
+  if (btnMainDocumentOpen) {
+    btnMainDocumentOpen.addEventListener('click', () => {
+      if (currentViewerMode === 'document' && currentFilePath) {
+        ipcRenderer.invoke('open-path', currentFilePath);
+      }
+    });
+  }
+  if (btnMainDocumentRefresh) {
+    btnMainDocumentRefresh.addEventListener('click', () => {
+      if (currentViewerMode === 'document' && currentFilePath) {
+        openDocumentInMainViewer(currentFilePath, { forceRefresh: true });
+      }
+    });
+  }
+  if (mainDocumentViewer) {
+    mainDocumentViewer.addEventListener('click', (e) => {
+      const button = e.target.closest('[data-main-document-action]');
+      if (!button) return;
+      handleMainDocumentAction(button.dataset.mainDocumentAction);
+    });
+  }
+  if (mainDocumentPageInput) {
+    mainDocumentPageInput.addEventListener('change', () => {
+      goToMainDocumentPage(mainDocumentPageInput.value);
+    });
+    mainDocumentPageInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        goToMainDocumentPage(mainDocumentPageInput.value);
+        mainDocumentPageInput.blur();
+      }
+    });
+  }
   if (mainPdfViewer) {
     mainPdfViewer.addEventListener('click', (e) => {
       const button = e.target.closest('[data-main-pdf-action]');
@@ -386,6 +442,8 @@ function restoreLastMediaFromHistory(history, autoResume) {
     showLoading('正在恢复上次阅读的 PDF...');
   } else if (mediaKind === 'image') {
     showLoading('正在恢复上次查看的图片...');
+  } else if (mediaKind === 'document') {
+    showLoading('正在恢复上次查看的文档...');
   }
 
   setTimeout(() => {
@@ -703,7 +761,7 @@ function renderDirectoryTree(tree) {
     directoryTree.innerHTML = `
       <div class="tree-placeholder">
         <p>目录中无支持的媒体文件</p>
-        <span>支持视频、PDF 以及常见图片格式</span>
+        <span>支持视频、PDF、图片以及 Word / Excel / PPT</span>
       </div>
     `;
     return;
@@ -794,6 +852,16 @@ function createTreeNodeDOM(node, depth = 0) {
         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
         <circle cx="8.5" cy="8.5" r="1.5"></circle>
         <polyline points="21 15 16 10 5 21"></polyline>
+      </svg>
+    `;
+  } else if (mediaKind === 'document') {
+    iconSpan.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+        <polyline points="14 2 14 8 20 8"></polyline>
+        <line x1="8" y1="13" x2="16" y2="13"></line>
+        <line x1="8" y1="17" x2="16" y2="17"></line>
+        <line x1="8" y1="9" x2="10" y2="9"></line>
       </svg>
     `;
   } else {
@@ -1313,11 +1381,12 @@ function resetVideoControlsForDocumentMode() {
 
 function setMainViewerMode(mode) {
   currentViewerMode = mode;
-  playerContainer.classList.remove('viewer-mode-video', 'viewer-mode-image', 'viewer-mode-pdf', 'viewer-mode-welcome');
+  playerContainer.classList.remove('viewer-mode-video', 'viewer-mode-image', 'viewer-mode-document', 'viewer-mode-pdf', 'viewer-mode-welcome');
   playerContainer.classList.add(`viewer-mode-${mode}`);
 
   videoElement.classList.toggle('hidden', mode !== 'video');
   if (mainImageViewer) mainImageViewer.classList.toggle('hidden', mode !== 'image');
+  if (mainDocumentViewer) mainDocumentViewer.classList.toggle('hidden', mode !== 'document');
   if (mainPdfViewer) mainPdfViewer.classList.toggle('hidden', mode !== 'pdf');
 
   if (mode === 'video') {
@@ -1345,6 +1414,10 @@ function openMediaFile(filePath, mediaKind = null) {
   }
   if (kind === 'image') {
     openImageInMainViewer(filePath);
+    return;
+  }
+  if (kind === 'document') {
+    openDocumentInMainViewer(filePath);
     return;
   }
   alert('暂不支持该文件类型');
@@ -1438,6 +1511,360 @@ function resetMainImageFit() {
   const stage = document.querySelector('.main-image-stage');
   if (stage) stage.scrollTo({ left: 0, top: 0, behavior: 'smooth' });
   if (mainImageStatus) mainImageStatus.textContent = '适合窗口显示';
+}
+
+const MAIN_DOCUMENT_PAGE_WIDTH = 760;
+const MAIN_DOCUMENT_PAGE_HEIGHT = 1040;
+const MAIN_DOCUMENT_PAGE_PADDING_X = 64;
+const MAIN_DOCUMENT_PAGE_PADDING_Y = 58;
+
+function getDocumentMeta(filePath) {
+  const ext = path.extname(filePath || '').toLowerCase();
+  if (['.doc', '.docx'].includes(ext)) {
+    return { badge: 'WORD', type: 'Word 文档', placeholder: 'WORD' };
+  }
+  if (['.xls', '.xlsx'].includes(ext)) {
+    return { badge: 'XLS', type: 'Excel 表格', placeholder: 'XLS' };
+  }
+  if (['.ppt', '.pptx'].includes(ext)) {
+    return { badge: 'PPT', type: 'PowerPoint 演示文稿', placeholder: 'PPT' };
+  }
+  return { badge: 'DOC', type: 'Office 文档', placeholder: 'DOC' };
+}
+
+function getMainDocumentScopedStyleId() {
+  return 'main-document-converted-style';
+}
+
+function scopeMainDocumentCss(cssText) {
+  return String(cssText || '').replace(/([^{}]+)\{([^{}]*)\}/g, (match, selectorText, bodyText) => {
+    const trimmedSelector = selectorText.trim();
+    if (!trimmedSelector || trimmedSelector.startsWith('@')) return match;
+    const scopedSelector = trimmedSelector.split(',')
+      .map(selector => {
+        const clean = selector.trim();
+        if (!clean) return '';
+        if (clean === 'body' || clean === 'html') return '.main-document-page-body';
+        return `.main-document-page-body ${clean}`;
+      })
+      .filter(Boolean)
+      .join(', ');
+    return scopedSelector ? `${scopedSelector}{${bodyText}}` : match;
+  });
+}
+
+function applyMainDocumentConvertedStyles(styles) {
+  let styleEl = document.getElementById(getMainDocumentScopedStyleId());
+  if (!styleEl) {
+    styleEl = document.createElement('style');
+    styleEl.id = getMainDocumentScopedStyleId();
+    document.head.appendChild(styleEl);
+  }
+  styleEl.textContent = styles ? scopeMainDocumentCss(styles) : '';
+}
+
+function extractMainDocumentHtml(html) {
+  const parser = new DOMParser();
+  const parsed = parser.parseFromString(String(html || ''), 'text/html');
+  parsed.querySelectorAll('script, iframe, object, embed').forEach(node => node.remove());
+  const styles = Array.from(parsed.querySelectorAll('style'))
+    .map(style => style.textContent || '')
+    .join('\n');
+  const bodyHtml = parsed.body ? parsed.body.innerHTML : String(html || '');
+  return { styles, bodyHtml };
+}
+
+function paginateMainDocumentHtml(html) {
+  const { styles, bodyHtml } = extractMainDocumentHtml(html);
+  applyMainDocumentConvertedStyles(styles);
+
+  const source = document.createElement('div');
+  source.innerHTML = bodyHtml;
+
+  const measure = document.createElement('div');
+  measure.className = 'main-document-pagination-measure main-document-page-body';
+  const innerWidth = MAIN_DOCUMENT_PAGE_WIDTH - MAIN_DOCUMENT_PAGE_PADDING_X * 2;
+  const innerHeight = MAIN_DOCUMENT_PAGE_HEIGHT - MAIN_DOCUMENT_PAGE_PADDING_Y * 2;
+  measure.style.width = `${innerWidth}px`;
+  document.body.appendChild(measure);
+
+  const pages = [];
+  const sourceNodes = Array.from(source.childNodes)
+    .filter(node => node.nodeType !== Node.TEXT_NODE || node.textContent.trim());
+
+  const pushMeasurePage = () => {
+    const pageHtml = measure.innerHTML.trim();
+    if (pageHtml) pages.push(pageHtml);
+    measure.replaceChildren();
+  };
+
+  sourceNodes.forEach(node => {
+    const clone = node.cloneNode(true);
+    measure.appendChild(clone);
+    if (measure.scrollHeight > innerHeight && measure.childNodes.length > 1) {
+      measure.removeChild(clone);
+      pushMeasurePage();
+      measure.appendChild(clone);
+    }
+  });
+
+  pushMeasurePage();
+  measure.remove();
+
+  return pages.length > 0 ? pages : ['<p>文档内容为空</p>'];
+}
+
+function setMainDocumentPlaceholder(title, message) {
+  if (mainDocumentReader) mainDocumentReader.classList.add('hidden');
+  if (mainDocumentPreviewShell) mainDocumentPreviewShell.classList.remove('hidden');
+  if (mainDocumentPlaceholder) {
+    mainDocumentPlaceholder.classList.remove('hidden');
+    const titleEl = mainDocumentPlaceholder.querySelector('h3');
+    const messageEl = mainDocumentPlaceholder.querySelector('p');
+    if (titleEl) titleEl.textContent = title;
+    if (messageEl) messageEl.textContent = message;
+  }
+  if (mainDocumentPreview) {
+    mainDocumentPreview.classList.add('hidden');
+    mainDocumentPreview.removeAttribute('src');
+  }
+}
+
+function clearMainDocumentPreview() {
+  mainDocumentState = null;
+  disconnectMainDocumentResizeObserver();
+  applyMainDocumentConvertedStyles('');
+  if (mainDocumentReader) mainDocumentReader.classList.add('hidden');
+  if (mainDocumentPreviewShell) mainDocumentPreviewShell.classList.remove('hidden');
+  if (mainDocumentPageBody) mainDocumentPageBody.innerHTML = '';
+  if (mainDocumentPreview) {
+    mainDocumentPreview.classList.add('hidden');
+    mainDocumentPreview.removeAttribute('src');
+    mainDocumentPreview.style.width = '';
+    mainDocumentPreview.style.maxWidth = '';
+    mainDocumentPreview.style.maxHeight = '';
+  }
+  if (mainDocumentPlaceholder) mainDocumentPlaceholder.classList.remove('hidden');
+  syncMainDocumentControls();
+}
+
+function disconnectMainDocumentResizeObserver() {
+  if (mainDocumentResizeObserver) {
+    mainDocumentResizeObserver.disconnect();
+    mainDocumentResizeObserver = null;
+  }
+}
+
+function connectMainDocumentResizeObserver() {
+  disconnectMainDocumentResizeObserver();
+  if (!mainDocumentStage || typeof ResizeObserver === 'undefined') return;
+  mainDocumentResizeObserver = new ResizeObserver(() => {
+    if (currentViewerMode === 'document' && mainDocumentState && !mainDocumentState.manualZoom) {
+      applyMainDocumentAutoFit();
+    }
+  });
+  mainDocumentResizeObserver.observe(mainDocumentStage);
+}
+
+function syncMainDocumentControls() {
+  const state = mainDocumentState;
+  const hasDocument = Boolean(state);
+  const hasMultiplePages = Boolean(state && state.pageCount > 1);
+
+  if (mainDocumentPageInput) {
+    mainDocumentPageInput.value = state?.currentPage || 1;
+    mainDocumentPageInput.max = state?.pageCount || 1;
+    mainDocumentPageInput.disabled = !hasMultiplePages;
+  }
+  if (mainDocumentPageCount) {
+    mainDocumentPageCount.textContent = state?.pageCount || '--';
+  }
+  if (mainDocumentZoomLabel) {
+    mainDocumentZoomLabel.textContent = `${Math.round((state?.zoom || 1) * 100)}%`;
+  }
+  if (mainDocumentViewer) {
+    const prevBtn = mainDocumentViewer.querySelector('[data-main-document-action="prev"]');
+    const nextBtn = mainDocumentViewer.querySelector('[data-main-document-action="next"]');
+    const zoomOutBtn = mainDocumentViewer.querySelector('[data-main-document-action="zoom-out"]');
+    const zoomInBtn = mainDocumentViewer.querySelector('[data-main-document-action="zoom-in"]');
+    const fitBtn = mainDocumentViewer.querySelector('[data-main-document-action="fit"]');
+    if (prevBtn) prevBtn.disabled = !hasMultiplePages || state.currentPage <= 1;
+    if (nextBtn) nextBtn.disabled = !hasMultiplePages || state.currentPage >= state.pageCount;
+    if (zoomOutBtn) zoomOutBtn.disabled = !hasDocument;
+    if (zoomInBtn) zoomInBtn.disabled = !hasDocument;
+    if (fitBtn) fitBtn.disabled = !hasDocument;
+  }
+}
+
+function applyMainDocumentZoom() {
+  const state = mainDocumentState;
+  if (!state) {
+    syncMainDocumentControls();
+    return;
+  }
+
+  if (state.mode === 'html') {
+    if (mainDocumentPageViewport) {
+      mainDocumentPageViewport.style.width = `${state.basePageWidth * state.zoom}px`;
+      mainDocumentPageViewport.style.height = `${state.basePageHeight * state.zoom}px`;
+    }
+    if (mainDocumentPagePaper) {
+      mainDocumentPagePaper.style.width = `${state.basePageWidth}px`;
+      mainDocumentPagePaper.style.height = `${state.basePageHeight}px`;
+      mainDocumentPagePaper.style.setProperty('--main-document-zoom', state.zoom);
+      mainDocumentPagePaper.style.transform = `scale(${state.zoom})`;
+    }
+  } else if (state.mode === 'image' && mainDocumentPreview) {
+    mainDocumentPreview.style.maxWidth = 'none';
+    mainDocumentPreview.style.maxHeight = 'none';
+    mainDocumentPreview.style.width = `${state.basePageWidth * state.zoom}px`;
+  }
+
+  syncMainDocumentControls();
+}
+
+function applyMainDocumentAutoFit() {
+  const state = mainDocumentState;
+  if (!state || !mainDocumentStage) {
+    syncMainDocumentControls();
+    return;
+  }
+  if (state.manualZoom) {
+    syncMainDocumentControls();
+    return;
+  }
+
+  const stageStyle = window.getComputedStyle(mainDocumentStage);
+  const paddingX = parseCssPx(stageStyle.paddingLeft) + parseCssPx(stageStyle.paddingRight);
+  const paddingY = parseCssPx(stageStyle.paddingTop) + parseCssPx(stageStyle.paddingBottom);
+  const pageNumberReserve = state.mode === 'html' ? 28 : 0;
+  const availableWidth = Math.max(160, mainDocumentStage.clientWidth - paddingX);
+  const availableHeight = Math.max(180, mainDocumentStage.clientHeight - paddingY - pageNumberReserve);
+  const widthZoom = availableWidth / state.basePageWidth;
+  const heightZoom = availableHeight / state.basePageHeight;
+  state.zoom = Math.min(2.2, Math.max(0.2, Math.min(widthZoom, heightZoom)));
+  applyMainDocumentZoom();
+}
+
+function renderMainDocumentPage(direction = 'forward') {
+  const state = mainDocumentState;
+  if (!state || state.mode !== 'html' || !mainDocumentPageBody) return;
+  const pageHtml = state.pages[state.currentPage - 1] || '';
+  mainDocumentPageBody.innerHTML = pageHtml;
+  if (mainDocumentPageNumber) {
+    mainDocumentPageNumber.textContent = `第 ${state.currentPage} 页`;
+  }
+  if (mainDocumentStatus) {
+    mainDocumentStatus.textContent = `${state.currentPage} / ${state.pageCount} 页`;
+  }
+  if (mainDocumentPagePaper) {
+    mainDocumentPagePaper.classList.remove('page-turn-forward', 'page-turn-backward');
+    void mainDocumentPagePaper.offsetWidth;
+    mainDocumentPagePaper.classList.add(direction === 'backward' ? 'page-turn-backward' : 'page-turn-forward');
+    setTimeout(() => {
+      if (mainDocumentPagePaper) {
+        mainDocumentPagePaper.classList.remove('page-turn-forward', 'page-turn-backward');
+      }
+    }, 260);
+  }
+  applyMainDocumentZoom();
+}
+
+function goToMainDocumentPage(page) {
+  const state = mainDocumentState;
+  if (!state || state.mode !== 'html') return;
+  const targetPage = Math.min(state.pageCount, Math.max(1, parseInt(page, 10) || 1));
+  if (targetPage === state.currentPage) {
+    syncMainDocumentControls();
+    return;
+  }
+  const direction = targetPage < state.currentPage ? 'backward' : 'forward';
+  state.currentPage = targetPage;
+  renderMainDocumentPage(direction);
+}
+
+function turnMainDocumentPage(direction) {
+  const state = mainDocumentState;
+  if (!state || state.mode !== 'html') return;
+  goToMainDocumentPage(state.currentPage + (direction === 'prev' ? -1 : 1));
+}
+
+function handleMainDocumentAction(action) {
+  const state = mainDocumentState;
+  if (!state) return;
+
+  switch (action) {
+    case 'prev':
+      turnMainDocumentPage('prev');
+      break;
+    case 'next':
+      turnMainDocumentPage('next');
+      break;
+    case 'zoom-out':
+      state.manualZoom = true;
+      state.zoom = Math.max(0.25, Math.round((state.zoom - 0.1) * 10) / 10);
+      applyMainDocumentZoom();
+      if (mainDocumentStatus) mainDocumentStatus.textContent = `${Math.round(state.zoom * 100)}% · 手动缩放`;
+      break;
+    case 'zoom-in':
+      state.manualZoom = true;
+      state.zoom = Math.min(2.4, Math.round((state.zoom + 0.1) * 10) / 10);
+      applyMainDocumentZoom();
+      if (mainDocumentStatus) mainDocumentStatus.textContent = `${Math.round(state.zoom * 100)}% · 手动缩放`;
+      break;
+    case 'fit':
+      state.manualZoom = false;
+      applyMainDocumentAutoFit();
+      if (mainDocumentStatus) mainDocumentStatus.textContent = state.mode === 'html'
+        ? `${state.currentPage} / ${state.pageCount} 页 · 适合窗口`
+        : '适合窗口显示';
+      break;
+  }
+}
+
+function showMainDocumentHtml(html) {
+  const pages = paginateMainDocumentHtml(html);
+  mainDocumentState = {
+    mode: 'html',
+    pages,
+    pageCount: pages.length,
+    currentPage: 1,
+    zoom: 1,
+    manualZoom: false,
+    basePageWidth: MAIN_DOCUMENT_PAGE_WIDTH,
+    basePageHeight: MAIN_DOCUMENT_PAGE_HEIGHT
+  };
+  if (mainDocumentPreviewShell) mainDocumentPreviewShell.classList.add('hidden');
+  if (mainDocumentReader) mainDocumentReader.classList.remove('hidden');
+  if (mainDocumentPreview) {
+    mainDocumentPreview.classList.add('hidden');
+    mainDocumentPreview.removeAttribute('src');
+  }
+  renderMainDocumentPage('forward');
+  connectMainDocumentResizeObserver();
+  applyMainDocumentAutoFit();
+}
+
+function showMainDocumentImage(imageUrl, baseName, loadedImage) {
+  mainDocumentState = {
+    mode: 'image',
+    pageCount: 1,
+    currentPage: 1,
+    zoom: 1,
+    manualZoom: false,
+    basePageWidth: loadedImage.naturalWidth || 900,
+    basePageHeight: loadedImage.naturalHeight || 1200
+  };
+  if (mainDocumentReader) mainDocumentReader.classList.add('hidden');
+  if (mainDocumentPreviewShell) mainDocumentPreviewShell.classList.remove('hidden');
+  if (mainDocumentPlaceholder) mainDocumentPlaceholder.classList.add('hidden');
+  if (mainDocumentPreview) {
+    mainDocumentPreview.src = imageUrl;
+    mainDocumentPreview.alt = `${baseName} 预览`;
+    mainDocumentPreview.classList.remove('hidden');
+  }
+  connectMainDocumentResizeObserver();
+  applyMainDocumentAutoFit();
 }
 
 function resetMainPdfSlots(message = '请选择 PDF 文件', className = 'main-viewer-loading') {
@@ -1636,6 +2063,7 @@ async function openImageInMainViewer(filePath) {
   resetVideoControlsForDocumentMode();
   disconnectMainPdfResizeObserver();
   mainPdfState = null;
+  clearMainDocumentPreview();
   currentFilePath = filePath;
   highlightActiveFileDOM(filePath);
   resetMainImageFit();
@@ -1663,6 +2091,69 @@ async function openImageInMainViewer(filePath) {
   }
 }
 
+async function openDocumentInMainViewer(filePath, options = {}) {
+  const token = ++mainViewerToken;
+  ensurePlayerContainerVisible();
+  if (currentViewerMode === 'video') savePlaybackProgress();
+  setMainViewerMode('document');
+  resetVideoControlsForDocumentMode();
+  disconnectMainPdfResizeObserver();
+  mainPdfState = null;
+  clearMainDocumentPreview();
+  currentFilePath = filePath;
+  highlightActiveFileDOM(filePath);
+  saveMediaTreeState({ lastMediaFile: filePath, lastMediaKind: 'document' });
+
+  const baseName = path.basename(filePath);
+  const meta = getDocumentMeta(filePath);
+  if (mainDocumentBadge) mainDocumentBadge.textContent = meta.badge;
+  if (mainDocumentPlaceholderIcon) mainDocumentPlaceholderIcon.textContent = meta.placeholder;
+  if (mainDocumentTitle) mainDocumentTitle.textContent = baseName;
+  if (mainDocumentStatus) mainDocumentStatus.textContent = '正在准备文档预览...';
+  setMainDocumentPlaceholder('正在准备文档预览', 'Word 文档会转换为分页阅读视图；其它 Office 文档会尝试生成系统预览。');
+  showLoading('正在准备文档预览...');
+
+  try {
+    const result = await ipcRenderer.invoke('document-get-preview', {
+      documentPath: filePath,
+      forceRefresh: Boolean(options.forceRefresh)
+    });
+    if (token !== mainViewerToken || currentViewerMode !== 'document') return;
+
+    if (!result || !result.success) {
+      const message = result?.error || '当前文档暂时无法生成内置预览';
+      if (mainDocumentStatus) mainDocumentStatus.textContent = `预览不可用：${message}`;
+      setMainDocumentPlaceholder('预览不可用', `${message}。可以通过“系统打开/编辑”使用默认 Office 应用查看和修改。`);
+      return;
+    }
+
+    if (result.mode === 'html' && result.html) {
+      showMainDocumentHtml(result.html);
+      if (token !== mainViewerToken || currentViewerMode !== 'document') return;
+      if (mainDocumentStatus) mainDocumentStatus.textContent = `${mainDocumentState.pageCount} 页 · 适合窗口`;
+      return;
+    }
+
+    if (result.absolutePath) {
+      const imageUrl = `http://localhost:30032/screenshot?path=${encodeURIComponent(result.absolutePath)}`;
+      const loadedImage = await preloadMainImage(imageUrl, `${baseName} 预览`);
+      if (token !== mainViewerToken || currentViewerMode !== 'document') return;
+      showMainDocumentImage(imageUrl, baseName, loadedImage);
+      if (mainDocumentStatus) mainDocumentStatus.textContent = '已生成系统预览 · 可用系统应用继续查看/编辑';
+      return;
+    }
+
+    if (mainDocumentStatus) mainDocumentStatus.textContent = '当前文档暂时无法生成内置预览';
+    setMainDocumentPlaceholder('预览不可用', '当前文档暂时无法生成内置预览。可以通过“系统打开/编辑”使用默认 Office 应用查看和修改。');
+  } catch (err) {
+    if (token !== mainViewerToken || currentViewerMode !== 'document') return;
+    if (mainDocumentStatus) mainDocumentStatus.textContent = `文档预览失败：${err.message}`;
+    setMainDocumentPlaceholder('文档预览失败', `${err.message}。可以通过“系统打开/编辑”使用默认 Office 应用查看和修改。`);
+  } finally {
+    if (token === mainViewerToken) hideLoading();
+  }
+}
+
 async function openPdfInMainViewer(filePath) {
   const token = ++mainViewerToken;
   ensurePlayerContainerVisible();
@@ -1670,6 +2161,7 @@ async function openPdfInMainViewer(filePath) {
   setMainViewerMode('pdf');
   resetVideoControlsForDocumentMode();
   disconnectMainPdfResizeObserver();
+  clearMainDocumentPreview();
   currentFilePath = filePath;
   highlightActiveFileDOM(filePath);
   saveMediaTreeState({ lastMediaFile: filePath, lastMediaKind: 'pdf' });
@@ -1867,6 +2359,7 @@ function prepareMainVideoMode(nextFilePath) {
   disconnectMainPdfResizeObserver();
   mainPdfState = null;
   if (mainImagePreview) mainImagePreview.removeAttribute('src');
+  clearMainDocumentPreview();
   if (currentViewerMode !== 'video') {
     currentFilePath = '';
     currentFileDuration = 0;
@@ -2353,6 +2846,12 @@ function handleKeyboardShortcuts(e) {
   if (currentViewerMode === 'pdf' && ['ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
     e.preventDefault();
     turnMainPdfPage(e.code === 'ArrowLeft' ? 'prev' : 'next');
+    return;
+  }
+
+  if (currentViewerMode === 'document' && ['ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
+    e.preventDefault();
+    turnMainDocumentPage(e.code === 'ArrowLeft' ? 'prev' : 'next');
     return;
   }
 

@@ -101,7 +101,7 @@
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
             </svg>
             <p>尚未选择文件夹</p>
-            <span>点击上方按钮导入包含视频、PDF 或图片的文件夹</span>
+            <span>点击上方按钮导入包含视频、PDF、图片或 Office 文档的文件夹</span>
           </div>
         </div>
 
@@ -131,6 +131,56 @@
         </div>
         <div class="main-image-stage">
           <img id="main-image-preview" alt="图片预览">
+        </div>
+      </div>
+
+      <!-- Main Office Document Previewer -->
+      <div id="main-document-viewer" class="main-media-viewer main-document-viewer hidden">
+        <div class="main-viewer-toolbar">
+          <div class="main-viewer-title-group">
+            <span class="main-viewer-badge document" id="main-document-badge">DOC</span>
+            <div>
+              <div id="main-document-title" class="main-viewer-title">文档资料</div>
+              <div id="main-document-status" class="main-viewer-subtitle">正在准备文档预览...</div>
+            </div>
+          </div>
+          <div class="main-viewer-controls">
+            <button type="button" data-main-document-action="prev">上一页</button>
+            <div class="main-document-page-jump">
+              <input type="number" min="1" value="1" id="main-document-page-input">
+              <span>/</span>
+              <span id="main-document-page-count">--</span>
+            </div>
+            <button type="button" data-main-document-action="next">下一页</button>
+            <span class="main-viewer-divider"></span>
+            <button type="button" data-main-document-action="zoom-out">-</button>
+            <span id="main-document-zoom-label">100%</span>
+            <button type="button" data-main-document-action="zoom-in">+</button>
+            <button type="button" data-main-document-action="fit">适合窗口</button>
+            <span class="main-viewer-divider"></span>
+            <button type="button" id="btn-main-document-refresh">重新生成预览</button>
+            <button type="button" id="btn-main-document-open">系统打开/编辑</button>
+          </div>
+        </div>
+        <div class="main-document-stage" id="main-document-stage">
+          <div id="main-document-reader" class="main-document-reader hidden">
+            <div class="main-document-page-viewport" id="main-document-page-viewport">
+              <div class="main-document-page-paper" id="main-document-page-paper">
+                <div class="main-document-page-body" id="main-document-page-body"></div>
+              </div>
+            </div>
+            <div class="main-document-page-number" id="main-document-page-number">第 1 页</div>
+          </div>
+          <div class="main-document-preview-shell" id="main-document-preview-shell">
+            <img id="main-document-preview" class="hidden" alt="文档预览">
+            <div id="main-document-placeholder" class="main-document-placeholder">
+              <div class="main-document-placeholder-icon" id="main-document-placeholder-icon">DOC</div>
+              <div>
+                <h3>正在准备文档预览</h3>
+                <p>如果系统无法生成预览，可使用右上角“系统打开/编辑”。</p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -211,7 +261,7 @@
             </svg>
           </div>
           <h1>Rong VideoPlayer</h1>
-          <p>支持视频播放、PDF 原生阅读以及常见图片预览</p>
+          <p>支持视频播放、PDF 原生阅读、图片预览和 Office 文档查看</p>
           <div class="shortcuts-guide">
             <div class="shortcut-item"><span class="key">Space</span> 播放 / 暂停</div>
             <div class="shortcut-item"><span class="key">←</span> <span class="key">→</span> 快退 / 快进 15秒</div>

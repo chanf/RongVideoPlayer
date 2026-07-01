@@ -41,6 +41,8 @@ function resolveBinaryPath(name) {
 const FFMPEG_PATH = resolveBinaryPath('ffmpeg');
 const FFPROBE_PATH = resolveBinaryPath('ffprobe');
 const PDF_RENDERER_PATH = resolveBinaryPath('pdf_render_mac');
+const QUICKLOOK_PATH = process.platform === 'darwin' ? resolveBinaryPath('qlmanage') : 'qlmanage';
+const TEXTUTIL_PATH = process.platform === 'darwin' ? resolveBinaryPath('textutil') : 'textutil';
 
 function checkFFmpegExists() {
   try {
@@ -73,12 +75,15 @@ const NATIVE_EXTENSIONS = ['.mp4', '.webm', '.ogg', '.mov', '.m4v'];
 const VIDEO_EXTENSIONS = ['.mp4', '.mkv', '.rmvb', '.avi', '.mov', '.flv', '.wmv', '.webm', '.m4v', '.ts', '.3gp'];
 const PDF_EXTENSIONS = ['.pdf'];
 const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.svg', '.avif', '.tif', '.tiff'];
-const SUPPORTED_MEDIA_EXTENSIONS = new Set([...VIDEO_EXTENSIONS, ...PDF_EXTENSIONS, ...IMAGE_EXTENSIONS]);
+const DOCUMENT_EXTENSIONS = ['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'];
+const WORD_DOCUMENT_EXTENSIONS = ['.doc', '.docx'];
+const SUPPORTED_MEDIA_EXTENSIONS = new Set([...VIDEO_EXTENSIONS, ...PDF_EXTENSIONS, ...IMAGE_EXTENSIONS, ...DOCUMENT_EXTENSIONS]);
 
 function getMediaKindByExt(ext) {
   if (VIDEO_EXTENSIONS.includes(ext)) return 'video';
   if (PDF_EXTENSIONS.includes(ext)) return 'pdf';
   if (IMAGE_EXTENSIONS.includes(ext)) return 'image';
+  if (DOCUMENT_EXTENSIONS.includes(ext)) return 'document';
   return null;
 }
 
@@ -1359,6 +1364,7 @@ ipcMain.handle('upload-material', async () => {
 // ==========================================
 const PDF_CACHE_DIR = path.join(app.getPath('userData'), 'PdfCache');
 const PDF_RENDER_CACHE_VERSION = 'v2';
+const DOCUMENT_PREVIEW_CACHE_DIR = path.join(app.getPath('userData'), 'DocumentPreviewCache');
 
 function runPdfRenderer(args) {
   return new Promise((resolve, reject) => {
@@ -1457,6 +1463,155 @@ ipcMain.handle('pdf-render-page', async (event, { pdfPath, pageIndex, scale }) =
     };
   } catch (err) {
     console.error('Failed to render PDF page:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+function getDocumentPreviewCacheDir(documentPath) {
+  const stat = fs.statSync(documentPath);
+  const cacheKey = crypto
+    .createHash('sha1')
+    .update(`doc-preview-v1:${documentPath}:${stat.size}:${stat.mtimeMs}`)
+    .digest('hex');
+  return path.join(DOCUMENT_PREVIEW_CACHE_DIR, cacheKey);
+}
+
+function findGeneratedPreview(cacheDir) {
+  if (!fs.existsSync(cacheDir)) return null;
+  const files = fs.readdirSync(cacheDir)
+    .filter(file => ['.png', '.jpg', '.jpeg'].includes(path.extname(file).toLowerCase()))
+    .sort((a, b) => a.localeCompare(b, 'zh-CN', { numeric: true }));
+  return files.length > 0 ? path.join(cacheDir, files[0]) : null;
+}
+
+function getCachedDocumentPreview(cacheDir) {
+  for (const fileName of ['preview.png', 'preview.jpg', 'preview.jpeg']) {
+    const previewPath = path.join(cacheDir, fileName);
+    if (fs.existsSync(previewPath)) return previewPath;
+  }
+  return findGeneratedPreview(cacheDir);
+}
+
+function getDocumentHtmlPath(cacheDir) {
+  return path.join(cacheDir, 'document.html');
+}
+
+function runTextutilHtmlConversion(documentPath, htmlPath) {
+  return new Promise((resolve, reject) => {
+    execFile(TEXTUTIL_PATH, ['-convert', 'html', '-output', htmlPath, documentPath], { timeout: 30000, maxBuffer: 1024 * 1024 * 8 }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr || stdout || error.message));
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+function runQuickLookThumbnail(documentPath, cacheDir) {
+  return new Promise((resolve, reject) => {
+    execFile(QUICKLOOK_PATH, ['-t', '-s', '1600', '-o', cacheDir, documentPath], { timeout: 30000 }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr || stdout || error.message));
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+ipcMain.handle('document-get-preview', async (event, payload) => {
+  try {
+    const documentPath = typeof payload === 'string' ? payload : payload?.documentPath;
+    const forceRefresh = typeof payload === 'object' && Boolean(payload.forceRefresh);
+    if (!documentPath || !fs.existsSync(documentPath)) {
+      throw new Error('文档文件不存在');
+    }
+
+    const ext = path.extname(documentPath).toLowerCase();
+    if (!DOCUMENT_EXTENSIONS.includes(ext)) {
+      throw new Error('请选择 Word、Excel 或 PPT 文件');
+    }
+
+    const stats = fs.statSync(documentPath);
+    const baseName = path.basename(documentPath);
+    const cacheDir = getDocumentPreviewCacheDir(documentPath);
+    const isWordDocument = WORD_DOCUMENT_EXTENSIONS.includes(ext);
+
+    if (forceRefresh && fs.existsSync(cacheDir)) {
+      fs.rmSync(cacheDir, { recursive: true, force: true });
+    }
+
+    if (isWordDocument && process.platform === 'darwin') {
+      const htmlPath = getDocumentHtmlPath(cacheDir);
+      try {
+        fs.mkdirSync(cacheDir, { recursive: true });
+        if (!fs.existsSync(htmlPath)) {
+          await runTextutilHtmlConversion(documentPath, htmlPath);
+        }
+        if (fs.existsSync(htmlPath)) {
+          return {
+            success: true,
+            mode: 'html',
+            html: fs.readFileSync(htmlPath, 'utf8'),
+            name: baseName,
+            extension: ext,
+            size: stats.size
+          };
+        }
+      } catch (conversionError) {
+        console.warn('Failed to convert Word document to HTML, fallback to Quick Look:', conversionError);
+      }
+    }
+
+    const cachedPreview = getCachedDocumentPreview(cacheDir);
+    if (cachedPreview) {
+      return {
+        success: true,
+        mode: 'image',
+        absolutePath: cachedPreview,
+        name: baseName,
+        extension: ext,
+        size: stats.size
+      };
+    }
+
+    if (process.platform !== 'darwin') {
+      return {
+        success: false,
+        unsupported: true,
+        name: baseName,
+        extension: ext,
+        size: stats.size,
+        error: '当前内置预览仅支持 macOS Quick Look，已提供系统打开方式'
+      };
+    }
+
+    fs.mkdirSync(cacheDir, { recursive: true });
+    await runQuickLookThumbnail(documentPath, cacheDir);
+
+    const generatedPreview = findGeneratedPreview(cacheDir);
+    if (!generatedPreview) {
+      throw new Error('系统未能生成该文档的预览图');
+    }
+
+    const generatedExt = path.extname(generatedPreview).toLowerCase() || '.png';
+    const normalizedExt = generatedExt === '.jpeg' ? '.jpg' : generatedExt;
+    const previewPath = path.join(cacheDir, `preview${normalizedExt}`);
+    if (path.resolve(generatedPreview) !== path.resolve(previewPath)) {
+      fs.copyFileSync(generatedPreview, previewPath);
+    }
+
+    return {
+      success: true,
+      mode: 'image',
+      absolutePath: previewPath,
+      name: baseName,
+      extension: ext,
+      size: stats.size
+    };
+  } catch (err) {
+    console.error('Failed to preview document:', err);
     return { success: false, error: err.message };
   }
 });
