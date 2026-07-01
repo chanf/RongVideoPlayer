@@ -5175,6 +5175,8 @@ function initSettings() {
   const setMaxDownloads = document.getElementById('set-max-downloads');
   const btnChangeDownloadPath = document.getElementById('btn-change-download-path');
   const setDownloadPathLabel = document.getElementById('set-download-path-label');
+  const btnCleanNoteImages = document.getElementById('btn-clean-note-images');
+  const noteImageCleanupResult = document.getElementById('note-image-cleanup-result');
   
   // Category management controls
   const setNewCatName = document.getElementById('set-new-cat-name');
@@ -5269,6 +5271,13 @@ function initSettings() {
     }
 
     return enabled ? '笔记库已迁移到 iCloud' : '笔记库已迁移到本地';
+  }
+
+  function formatCleanupBytes(bytes) {
+    const value = Number(bytes || 0);
+    if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toFixed(2)} MB`;
+    if (value >= 1024) return `${(value / 1024).toFixed(1)} KB`;
+    return `${value} B`;
   }
 
   // Render categories inside settings panel
@@ -5372,6 +5381,42 @@ function initSettings() {
         showBottomTip(err.message || '笔记库迁移失败', 'error');
         await refreshNotesStorageStatus();
       } finally {
+        hideLoading();
+      }
+    });
+  }
+
+  if (btnCleanNoteImages) {
+    btnCleanNoteImages.addEventListener('click', async () => {
+      if (!confirm('确认清理未被任何 Markdown 笔记引用的粘贴图片吗？此操作会删除隐藏图片目录中的无引用图片文件。')) {
+        return;
+      }
+
+      btnCleanNoteImages.disabled = true;
+      if (noteImageCleanupResult) {
+        noteImageCleanupResult.textContent = '正在扫描隐藏图片目录...';
+      }
+      showLoading('正在清理笔记粘贴图片...');
+
+      try {
+        const result = await ipcRenderer.invoke('cleanup-note-image-assets');
+        if (!result || !result.success) {
+          throw new Error(result?.error || '清理图片失败');
+        }
+
+        const summary = `扫描 ${result.scannedCount || 0} 张，删除 ${result.deletedCount || 0} 张，释放 ${formatCleanupBytes(result.freedBytes)}，移除 ${result.removedFolderCount || 0} 个空目录`;
+        if (noteImageCleanupResult) {
+          noteImageCleanupResult.textContent = summary;
+        }
+        showBottomTip(summary, 'success');
+      } catch (err) {
+        console.error('Failed to cleanup note pasted images:', err);
+        if (noteImageCleanupResult) {
+          noteImageCleanupResult.textContent = err.message || '清理图片失败';
+        }
+        showBottomTip(err.message || '清理图片失败', 'error');
+      } finally {
+        btnCleanNoteImages.disabled = false;
         hideLoading();
       }
     });
@@ -7529,12 +7574,82 @@ function initNotesFeature() {
     }
   }
 
+  function getPastedImageFile(clipboardData) {
+    if (!clipboardData || !clipboardData.items) return null;
+
+    for (const item of clipboardData.items) {
+      if (item.kind === 'file' && item.type && item.type.startsWith('image/')) {
+        return item.getAsFile();
+      }
+    }
+
+    return null;
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error || new Error('图片读取失败'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function insertTextIntoTextarea(textarea, text) {
+    const start = textarea.selectionStart || 0;
+    const end = textarea.selectionEnd || start;
+    const oldValue = textarea.value || '';
+    const before = oldValue.slice(0, start);
+    const after = oldValue.slice(end);
+    const prefix = before && !before.endsWith('\n') ? '\n\n' : '';
+    const suffix = after && !after.startsWith('\n') ? '\n\n' : '';
+    const insertedText = `${prefix}${text}${suffix}`;
+
+    textarea.value = `${before}${insertedText}${after}`;
+    const nextCursor = start + insertedText.length;
+    textarea.selectionStart = nextCursor;
+    textarea.selectionEnd = nextCursor;
+    textarea.focus();
+  }
+
+  async function handleNoteImagePaste(event) {
+    if (!isCurrentNoteAutosavable()) return;
+
+    const imageFile = getPastedImageFile(event.clipboardData);
+    if (!imageFile) return;
+
+    event.preventDefault();
+    showBottomTip('正在保存粘贴图片...');
+
+    try {
+      const imageDataUrl = await readFileAsDataUrl(imageFile);
+      const result = await ipcRenderer.invoke('save-note-image-asset', {
+        noteId: currentEditingNote.id,
+        imageDataUrl
+      });
+
+      if (!result || !result.success) {
+        throw new Error(result?.error || '粘贴图片保存失败');
+      }
+
+      const markdown = `![粘贴图片](${result.markdownUrl})`;
+      insertTextIntoTextarea(noteContentInput, markdown);
+      renderPreview();
+      scheduleNoteAutoSave({ immediate: true });
+      showBottomTip('图片已插入笔记', 'success');
+    } catch (err) {
+      console.error('Failed to paste image into note:', err);
+      showBottomTip(err.message || '粘贴图片失败', 'error');
+    }
+  }
+
   // Trigger preview render on input text changes
   if (noteContentInput) {
     noteContentInput.addEventListener('input', () => {
       renderPreview();
       scheduleNoteAutoSave();
     });
+    noteContentInput.addEventListener('paste', handleNoteImagePaste);
   }
 
   if (noteTitleInput) {

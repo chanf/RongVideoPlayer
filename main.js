@@ -1333,6 +1333,7 @@ ipcMain.handle('copy-image-to-clipboard', async (event, absolutePath) => {
 // ==========================================
 const NOTES_DB_FILENAME = 'notes-db.json';
 const MATERIALS_DIR_NAME = 'UploadedMaterials';
+const NOTE_IMAGE_ASSETS_DIR_NAME = '.note-images';
 
 function getAppSettings() {
   try {
@@ -1388,6 +1389,15 @@ function getUploadedMaterialsDir() {
   return path.join(getActiveNotesLibraryDir(), MATERIALS_DIR_NAME);
 }
 
+function getNoteImageAssetsDir(libraryDir = getActiveNotesLibraryDir()) {
+  return path.join(libraryDir, NOTE_IMAGE_ASSETS_DIR_NAME);
+}
+
+function getNoteImageAssetFolder(noteId, libraryDir = getActiveNotesLibraryDir()) {
+  const safeNoteId = String(noteId || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_');
+  return path.join(getNoteImageAssetsDir(libraryDir), `.${safeNoteId || 'unknown'}`);
+}
+
 function isPathInsideDirectory(targetPath, parentDir) {
   if (!targetPath || !parentDir) return false;
   const resolvedTarget = path.resolve(targetPath);
@@ -1434,31 +1444,36 @@ function replaceAllText(value, fromText, toText) {
   return String(value).split(fromText).join(toText);
 }
 
-function rewriteMaterialPathsInNotesDB(db, fromMaterialsDir, toMaterialsDir) {
-  if (!db || !Array.isArray(db.notes) || !fromMaterialsDir || !toMaterialsDir || fromMaterialsDir === toMaterialsDir) {
+function escapeHtmlAttributePath(filePath) {
+  return String(filePath || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function rewriteAssetPathsInNotesDB(db, fromAssetDir, toAssetDir) {
+  if (!db || !Array.isArray(db.notes) || !fromAssetDir || !toAssetDir || fromAssetDir === toAssetDir) {
     return db || { notes: [] };
   }
 
-  const encodedFrom = encodeURIComponent(fromMaterialsDir);
-  const encodedTo = encodeURIComponent(toMaterialsDir);
-  const htmlFrom = fromMaterialsDir
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-  const htmlTo = toMaterialsDir
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+  const encodedFrom = encodeURIComponent(fromAssetDir);
+  const encodedTo = encodeURIComponent(toAssetDir);
+  const htmlFrom = escapeHtmlAttributePath(fromAssetDir);
+  const htmlTo = escapeHtmlAttributePath(toAssetDir);
 
   db.notes = db.notes.map(note => {
     if (!note || typeof note.content !== 'string') return note;
     let content = note.content;
     content = replaceAllText(content, encodedFrom, encodedTo);
     content = replaceAllText(content, htmlFrom, htmlTo);
-    content = replaceAllText(content, fromMaterialsDir, toMaterialsDir);
+    content = replaceAllText(content, fromAssetDir, toAssetDir);
     return { ...note, content };
   });
   return db;
+}
+
+function rewriteMaterialPathsInNotesDB(db, fromMaterialsDir, toMaterialsDir) {
+  return rewriteAssetPathsInNotesDB(db, fromMaterialsDir, toMaterialsDir);
 }
 
 function copyDirectoryIfExists(fromDir, toDir) {
@@ -1487,36 +1502,50 @@ function countFilesInDirectory(dirPath) {
 function getNotesLibrarySummary(libraryDir) {
   const notesDbPath = path.join(libraryDir, NOTES_DB_FILENAME);
   const materialsDir = path.join(libraryDir, MATERIALS_DIR_NAME);
+  const noteImageAssetsDir = getNoteImageAssetsDir(libraryDir);
   const db = readNotesDBFromFile(notesDbPath);
   const materialCount = countFilesInDirectory(materialsDir);
+  const noteImageAssetCount = countFilesInDirectory(noteImageAssetsDir);
 
   return {
     exists: fs.existsSync(libraryDir),
     hasNotesDb: fs.existsSync(notesDbPath),
     hasMaterials: materialCount > 0,
+    hasNoteImageAssets: noteImageAssetCount > 0,
     noteCount: Array.isArray(db.notes) ? db.notes.length : 0,
-    materialCount
+    materialCount,
+    noteImageAssetCount
   };
 }
 
-function normalizeICloudMaterialPathsInNotesDB(db, targetMaterialsDir) {
-  if (!db || !Array.isArray(db.notes) || !targetMaterialsDir) {
+function normalizeICloudAssetPathsInNotesDB(db, assetDirName, targetAssetDir) {
+  if (!db || !Array.isArray(db.notes) || !assetDirName || !targetAssetDir) {
     return db || { notes: [] };
   }
 
-  const plainICloudMaterialsPattern = /\/Users\/.*?\/Library\/Mobile Documents\/com~apple~CloudDocs\/Rong VideoPlayer\/NotesLibrary\/UploadedMaterials/g;
-  const encodedICloudMaterialsPattern = /%2FUsers%2F.*?%2FLibrary%2FMobile%20Documents%2Fcom~apple~CloudDocs%2FRong%20VideoPlayer%2FNotesLibrary%2FUploadedMaterials/gi;
-  const encodedTargetMaterialsDir = encodeURIComponent(targetMaterialsDir);
+  const escapedAssetDirName = assetDirName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const encodedAssetDirName = encodeURIComponent(assetDirName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const plainICloudAssetPattern = new RegExp(`/Users/.*?/Library/Mobile Documents/com~apple~CloudDocs/Rong VideoPlayer/NotesLibrary/${escapedAssetDirName}`, 'g');
+  const encodedICloudAssetPattern = new RegExp(`%2FUsers%2F.*?%2FLibrary%2FMobile%20Documents%2Fcom~apple~CloudDocs%2FRong%20VideoPlayer%2FNotesLibrary%2F${encodedAssetDirName}`, 'gi');
+  const encodedTargetAssetDir = encodeURIComponent(targetAssetDir);
 
   db.notes = db.notes.map(note => {
     if (!note || typeof note.content !== 'string') return note;
     let content = note.content;
-    content = content.replace(plainICloudMaterialsPattern, () => targetMaterialsDir);
-    content = content.replace(encodedICloudMaterialsPattern, () => encodedTargetMaterialsDir);
+    content = content.replace(plainICloudAssetPattern, () => targetAssetDir);
+    content = content.replace(encodedICloudAssetPattern, () => encodedTargetAssetDir);
     return { ...note, content };
   });
 
   return db;
+}
+
+function normalizeICloudMaterialPathsInNotesDB(db, targetMaterialsDir) {
+  return normalizeICloudAssetPathsInNotesDB(db, MATERIALS_DIR_NAME, targetMaterialsDir);
+}
+
+function normalizeICloudNoteImagePathsInNotesDB(db, targetNoteImageAssetsDir) {
+  return normalizeICloudAssetPathsInNotesDB(db, NOTE_IMAGE_ASSETS_DIR_NAME, targetNoteImageAssetsDir);
 }
 
 function writeNotesDBToDir(libraryDir, db) {
@@ -1536,6 +1565,8 @@ function migrateNotesLibrary(targetMode) {
   const targetDir = targetMode === 'icloud' ? getICloudNotesLibraryDir() : getLocalNotesLibraryDir();
   const sourceMaterialsDir = path.join(sourceDir, MATERIALS_DIR_NAME);
   const targetMaterialsDir = path.join(targetDir, MATERIALS_DIR_NAME);
+  const sourceNoteImageAssetsDir = getNoteImageAssetsDir(sourceDir);
+  const targetNoteImageAssetsDir = getNoteImageAssetsDir(targetDir);
   const sourceSummaryBefore = getNotesLibrarySummary(sourceDir);
   const targetSummaryBefore = getNotesLibrarySummary(targetDir);
   const settings = getAppSettings();
@@ -1551,7 +1582,7 @@ function migrateNotesLibrary(targetMode) {
         targetDir,
         sourceSummaryBefore,
         targetSummaryBefore,
-        targetHadExistingLibrary: targetSummaryBefore.hasNotesDb || targetSummaryBefore.hasMaterials,
+        targetHadExistingLibrary: targetSummaryBefore.hasNotesDb || targetSummaryBefore.hasMaterials || targetSummaryBefore.hasNoteImageAssets,
         mergedNoteCount: targetSummaryBefore.noteCount,
         skipped: true
       }
@@ -1564,13 +1595,16 @@ function migrateNotesLibrary(targetMode) {
   }
 
   copyDirectoryIfExists(sourceMaterialsDir, targetMaterialsDir);
+  copyDirectoryIfExists(sourceNoteImageAssetsDir, targetNoteImageAssetsDir);
 
   const sourceDb = readNotesDBFromFile(path.join(sourceDir, NOTES_DB_FILENAME));
   let targetDb = readNotesDBFromFile(path.join(targetDir, NOTES_DB_FILENAME));
   if (targetMode === 'icloud') {
     targetDb = normalizeICloudMaterialPathsInNotesDB(targetDb, targetMaterialsDir);
+    targetDb = normalizeICloudNoteImagePathsInNotesDB(targetDb, targetNoteImageAssetsDir);
   }
-  const rewrittenSourceDb = rewriteMaterialPathsInNotesDB(sourceDb, sourceMaterialsDir, targetMaterialsDir);
+  let rewrittenSourceDb = rewriteMaterialPathsInNotesDB(sourceDb, sourceMaterialsDir, targetMaterialsDir);
+  rewrittenSourceDb = rewriteAssetPathsInNotesDB(rewrittenSourceDb, sourceNoteImageAssetsDir, targetNoteImageAssetsDir);
   const mergedDb = mergeNotesDB(targetDb, rewrittenSourceDb);
   writeNotesDBToDir(targetDir, mergedDb);
 
@@ -1585,10 +1619,11 @@ function migrateNotesLibrary(targetMode) {
       targetDir,
       sourceSummaryBefore,
       targetSummaryBefore,
-      targetHadExistingLibrary: targetSummaryBefore.hasNotesDb || targetSummaryBefore.hasMaterials,
+      targetHadExistingLibrary: targetSummaryBefore.hasNotesDb || targetSummaryBefore.hasMaterials || targetSummaryBefore.hasNoteImageAssets,
       sourceNoteCount: sourceSummaryBefore.noteCount,
       targetExistingNoteCount: targetSummaryBefore.noteCount,
       targetExistingMaterialCount: targetSummaryBefore.materialCount,
+      targetExistingNoteImageAssetCount: targetSummaryBefore.noteImageAssetCount,
       mergedNoteCount: Array.isArray(mergedDb.notes) ? mergedDb.notes.length : 0,
       skipped: false
     }
@@ -1611,6 +1646,7 @@ function getNotesStorageStatus(extra = {}) {
     iCloudDir: getICloudNotesLibraryDir(),
     notesDbPath: path.join(activeDir, NOTES_DB_FILENAME),
     materialsDir: path.join(activeDir, MATERIALS_DIR_NAME),
+    noteImageAssetsDir: getNoteImageAssetsDir(activeDir),
     ...extra
   };
 }
@@ -1631,12 +1667,192 @@ function saveNotesDB(db) {
   }
 }
 
+function getImageExtensionByMime(mimeType) {
+  const normalized = String(mimeType || '').toLowerCase();
+  const extMap = {
+    'image/png': '.png',
+    'image/jpeg': '.jpg',
+    'image/jpg': '.jpg',
+    'image/webp': '.webp',
+    'image/gif': '.gif',
+    'image/bmp': '.bmp',
+    'image/svg+xml': '.svg',
+    'image/avif': '.avif',
+    'image/tiff': '.tiff'
+  };
+  return extMap[normalized] || '.png';
+}
+
+function parseDataUrlImage(imageDataUrl) {
+  const matched = String(imageDataUrl || '').match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/);
+  if (!matched) {
+    throw new Error('剪贴板图片格式不正确');
+  }
+
+  const mimeType = matched[1].toLowerCase();
+  const buffer = Buffer.from(matched[2], 'base64');
+  if (buffer.length === 0) {
+    throw new Error('剪贴板图片内容为空');
+  }
+  if (buffer.length > 30 * 1024 * 1024) {
+    throw new Error('图片过大，请使用小于 30MB 的图片');
+  }
+
+  return { mimeType, buffer };
+}
+
+function walkFilesInDirectory(dirPath) {
+  if (!fs.existsSync(dirPath)) return [];
+
+  const files = [];
+  fs.readdirSync(dirPath, { withFileTypes: true }).forEach(entry => {
+    const entryPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...walkFilesInDirectory(entryPath));
+    } else if (entry.isFile()) {
+      files.push(entryPath);
+    }
+  });
+  return files;
+}
+
+function parseReferencedLocalPath(rawRef) {
+  if (!rawRef) return null;
+  const ref = String(rawRef).trim().replace(/&amp;/g, '&').replace(/^["']|["']$/g, '');
+
+  try {
+    const refUrl = new URL(ref, `http://localhost:${SERVER_PORT}`);
+    if (refUrl.pathname === '/screenshot') {
+      return refUrl.searchParams.get('path');
+    }
+  } catch (_) {
+    // Not a URL; fall through and treat it as a possible local path.
+  }
+
+  try {
+    const decoded = decodeURIComponent(ref.replace(/^file:\/\//, ''));
+    return path.isAbsolute(decoded) ? decoded : null;
+  } catch (_) {
+    return path.isAbsolute(ref) ? ref : null;
+  }
+}
+
+function collectReferencedNoteImageAssetPaths(db) {
+  const noteImageAssetsDir = getNoteImageAssetsDir();
+  const referenced = new Set();
+  const patterns = [
+    /(?:https?:\/\/localhost:30032)?\/screenshot\?path=([^)\s"']+)/g,
+    /!\[[^\]]*]\(([^)]+)\)/g,
+    /<img[^>]+src=["']([^"']+)["']/gi
+  ];
+
+  ((db && db.notes) || []).forEach(note => {
+    if (!note || typeof note.content !== 'string') return;
+
+    patterns.forEach(pattern => {
+      pattern.lastIndex = 0;
+      let matched = null;
+      while ((matched = pattern.exec(note.content)) !== null) {
+        const referencedPath = parseReferencedLocalPath(matched[1]);
+        if (referencedPath && isPathInsideDirectory(referencedPath, noteImageAssetsDir)) {
+          referenced.add(path.resolve(referencedPath));
+        }
+      }
+    });
+  });
+
+  return referenced;
+}
+
+function removeEmptyChildDirectories(dirPath, rootDir = dirPath) {
+  if (!fs.existsSync(dirPath)) return 0;
+
+  let removedCount = 0;
+  fs.readdirSync(dirPath, { withFileTypes: true }).forEach(entry => {
+    if (!entry.isDirectory()) return;
+    const childDir = path.join(dirPath, entry.name);
+    removedCount += removeEmptyChildDirectories(childDir, rootDir);
+  });
+
+  if (dirPath !== rootDir && fs.existsSync(dirPath) && fs.readdirSync(dirPath).length === 0) {
+    fs.rmdirSync(dirPath);
+    removedCount += 1;
+  }
+
+  return removedCount;
+}
+
 ipcMain.handle('get-notes-db', () => {
   return getNotesDB();
 });
 
 ipcMain.handle('save-notes-db', (event, db) => {
   return saveNotesDB(db);
+});
+
+ipcMain.handle('save-note-image-asset', async (event, payload = {}) => {
+  try {
+    const noteId = payload.noteId;
+    if (!noteId) {
+      throw new Error('缺少笔记 ID，无法保存图片');
+    }
+
+    const { mimeType, buffer } = parseDataUrlImage(payload.imageDataUrl);
+    const noteImageDir = getNoteImageAssetFolder(noteId);
+    fs.mkdirSync(noteImageDir, { recursive: true });
+
+    const extension = getImageExtensionByMime(mimeType);
+    const filename = `paste_${Date.now()}_${crypto.randomBytes(4).toString('hex')}${extension}`;
+    const absolutePath = path.join(noteImageDir, filename);
+    fs.writeFileSync(absolutePath, buffer);
+
+    return {
+      success: true,
+      absolutePath,
+      filename,
+      mimeType,
+      size: buffer.length,
+      markdownUrl: `http://localhost:${SERVER_PORT}/screenshot?path=${encodeURIComponent(absolutePath)}`
+    };
+  } catch (err) {
+    console.error('Failed to save pasted note image:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('cleanup-note-image-assets', async () => {
+  try {
+    const noteImageAssetsDir = getNoteImageAssetsDir();
+    const db = getNotesDB();
+    const referencedPaths = collectReferencedNoteImageAssetPaths(db);
+    const allAssetFiles = walkFilesInDirectory(noteImageAssetsDir);
+    let deletedCount = 0;
+    let freedBytes = 0;
+
+    allAssetFiles.forEach(filePath => {
+      const resolvedPath = path.resolve(filePath);
+      if (referencedPaths.has(resolvedPath)) return;
+
+      const stats = fs.statSync(filePath);
+      fs.unlinkSync(filePath);
+      deletedCount += 1;
+      freedBytes += stats.size;
+    });
+
+    const removedFolderCount = removeEmptyChildDirectories(noteImageAssetsDir);
+
+    return {
+      success: true,
+      scannedCount: allAssetFiles.length,
+      deletedCount,
+      keptCount: allAssetFiles.length - deletedCount,
+      removedFolderCount,
+      freedBytes
+    };
+  } catch (err) {
+    console.error('Failed to cleanup note image assets:', err);
+    return { success: false, error: err.message };
+  }
 });
 
 ipcMain.handle('get-notes-storage-status', () => {
