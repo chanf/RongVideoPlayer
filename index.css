@@ -3267,6 +3267,7 @@ body[data-theme="ningzhi"] .tree-cat-badge.inherited {
   gap: 8px;
   transition: all 0.2s ease;
   box-sizing: border-box;
+  height: 100%;
 }
 .note-card:hover {
   transform: translateY(-2px);
@@ -3296,8 +3297,8 @@ body[data-theme="ningzhi"] .tree-cat-badge.inherited {
 .note-card:hover .image-note-thumbnail img {
   transform: scale(1.05);
 }
-.image-material-note-card .note-card-meta {
-  margin-top: 0;
+.image-material-note-card .image-note-thumbnail {
+  height: 150px;
 }
 .pdf-note-thumbnail {
   height: 150px;
@@ -3368,7 +3369,22 @@ body[data-theme="ningzhi"] .tree-cat-badge.inherited {
   align-items: center;
   font-size: 11px;
   color: var(--text-muted);
-  margin-top: 8px;
+  min-height: 24px;
+  margin-top: auto;
+  padding-top: 8px;
+  box-sizing: border-box;
+}
+.note-card-category-tag {
+  min-width: 56px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: rgba(255,255,255,0.05);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-sizing: border-box;
 }
 
 /* Note Editor View */

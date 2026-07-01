@@ -4525,7 +4525,7 @@ function initNotesFeature() {
       const cat = screenshotsDB.categories.find(c => c.id === (note.categoryId || 'uncategorized'));
       const catName = cat ? cat.name : '未分类';
       const catTag = document.createElement('span');
-      catTag.style.cssText = 'background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border-color);';
+      catTag.className = 'note-card-category-tag';
       catTag.textContent = catName;
       meta.appendChild(catTag);
       
