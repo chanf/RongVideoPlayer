@@ -5545,6 +5545,8 @@ let notesDB = { notes: [] };
 let currentEditingNote = null;
 let selectedNoteCategory = 'all';
 let notesSearchQuery = '';
+let selectedNotesView = 'all';
+let selectedMaterialType = 'all';
 const NOTE_AUTOSAVE_DELAY_MS = 1200;
 const NOTE_DRAFTS_STORAGE_KEY = 'rong_notes_editor_drafts_v1';
 
@@ -5574,6 +5576,9 @@ function initNotesFeature() {
   const notesCategoriesList = document.getElementById('notes-categories-list');
   const notesGridView = document.getElementById('notes-grid-view');
   const notesGrid = document.getElementById('notes-grid');
+  const notesViewTabs = document.querySelectorAll('.notes-view-tab');
+  const materialTypeFilter = document.getElementById('material-type-filter');
+  const notesListSummary = document.getElementById('notes-list-summary');
   
   // Editor elements
   const noteEditorView = document.getElementById('note-editor-view');
@@ -6207,6 +6212,156 @@ function initNotesFeature() {
     return null;
   }
 
+  function decodeScreenshotFilePath(url) {
+    if (!url) return null;
+    try {
+      const parsedUrl = new URL(url, 'http://localhost:30032');
+      const filePath = parsedUrl.searchParams.get('path');
+      return filePath ? decodeURIComponent(filePath) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function extractAttachmentMaterialPath(note) {
+    if (!note || !note.content) return null;
+
+    const storagePathMatch = note.content.match(/存储路径\*\*:\s*`([^`]+)`/);
+    if (storagePathMatch && storagePathMatch[1]) return storagePathMatch[1];
+
+    const openPathMatch = note.content.match(/openAttachmentFile\(['"](.+?)['"]\)/);
+    if (openPathMatch && openPathMatch[1]) {
+      return openPathMatch[1].replace(/\\\\/g, '\\');
+    }
+
+    return null;
+  }
+
+  function normalizeExtension(value) {
+    const ext = String(value || '').toLowerCase();
+    return ext ? (ext.startsWith('.') ? ext : `.${ext}`) : '';
+  }
+
+  function getMaterialTypeByExtension(extension) {
+    const ext = normalizeExtension(extension);
+    if (ext === '.pdf') return { key: 'pdf', label: 'PDF' };
+    if (['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.svg', '.avif', '.tif', '.tiff'].includes(ext)) {
+      return { key: 'image', label: '图片' };
+    }
+    if (['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'].includes(ext)) {
+      return { key: 'office', label: ext.replace('.', '').toUpperCase() };
+    }
+    if (ext === '.md') return { key: 'markdown', label: 'MD' };
+    if (ext === '.txt') return { key: 'text', label: 'TXT' };
+    return { key: 'other', label: ext ? ext.replace('.', '').toUpperCase() : '资料' };
+  }
+
+  function getMaterialInfo(note) {
+    if (!note || !note.isMaterial) return null;
+
+    const pdfInfo = extractPdfMaterialInfo(note);
+    const imageUrl = !pdfInfo ? extractNoteImageUrl(note) : null;
+    const imagePath = imageUrl ? decodeScreenshotFilePath(imageUrl) : null;
+    const attachmentPath = extractAttachmentMaterialPath(note);
+    const materialPath = note.materialPath || pdfInfo?.pdfPath || imagePath || attachmentPath || null;
+    const extension = normalizeExtension(note.materialExtension || (materialPath ? path.extname(materialPath) : ''));
+    const type = getMaterialTypeByExtension(extension);
+    let name = note.materialName || pdfInfo?.title || (materialPath ? path.basename(materialPath) : note.title || '资料');
+
+    if (!path.extname(name) && extension) {
+      name = `${name}${extension}`;
+    }
+
+    return {
+      path: materialPath,
+      name,
+      title: note.title || (name ? name.replace(/\.[^.]+$/, '') : '资料'),
+      extension,
+      typeKey: type.key,
+      typeLabel: type.label,
+      size: note.materialSize || null,
+      imageUrl,
+      pdfInfo,
+      canOpen: Boolean(materialPath),
+      isLegacy: !note.materialPath
+    };
+  }
+
+  function formatMaterialSize(size) {
+    const bytes = Number(size || 0);
+    if (!bytes) return '';
+    if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  function createMaterialSearchText(note, info) {
+    return [
+      note?.title,
+      note?.content,
+      note?.materialName,
+      note?.materialPath,
+      info?.name,
+      info?.path,
+      info?.typeLabel
+    ].filter(Boolean).join(' ').toLowerCase();
+  }
+
+  function replaceAllLiteral(value, fromText, toText) {
+    if (!value || !fromText || fromText === toText) return value;
+    return String(value).split(fromText).join(toText);
+  }
+
+  function rewriteMaterialContentPath(content, oldPath, newPath) {
+    if (!content || !oldPath || !newPath) return content || '';
+    const oldEncodedPath = encodeURIComponent(oldPath);
+    const newEncodedPath = encodeURIComponent(newPath);
+    const oldHtmlPath = escapeHtmlText(oldPath);
+    const newHtmlPath = escapeHtmlText(newPath);
+    let nextContent = content;
+
+    nextContent = replaceAllLiteral(nextContent, oldEncodedPath, newEncodedPath);
+    nextContent = replaceAllLiteral(nextContent, oldHtmlPath, newHtmlPath);
+    nextContent = replaceAllLiteral(nextContent, oldPath, newPath);
+    return nextContent;
+  }
+
+  function rewriteMaterialContentName(content, oldName, newName, info) {
+    if (!content || !oldName || !newName || oldName === newName) return content || '';
+    if (['markdown', 'text'].includes(info?.typeKey)) return content;
+    return replaceAllLiteral(content, oldName, newName);
+  }
+
+  function syncNotesViewToolbar() {
+    notesViewTabs.forEach(tab => {
+      tab.classList.toggle('active', tab.dataset.notesView === selectedNotesView);
+    });
+    if (materialTypeFilter) {
+      const shouldShowTypeFilter = selectedNotesView === 'materials';
+      materialTypeFilter.classList.toggle('hidden', !shouldShowTypeFilter);
+      materialTypeFilter.value = selectedMaterialType;
+    }
+  }
+
+  function getMaterialTypeFilterLabel() {
+    if (!materialTypeFilter || selectedMaterialType === 'all') return '全部类型';
+    const selectedOption = materialTypeFilter.querySelector(`option[value="${selectedMaterialType}"]`);
+    return selectedOption ? selectedOption.textContent : '全部类型';
+  }
+
+  function updateNotesListSummary(visibleCount, totalCount) {
+    if (!notesListSummary) return;
+
+    const materialCount = notesDB.notes.filter(note => note.isMaterial).length;
+    const normalNoteCount = notesDB.notes.length - materialCount;
+    if (selectedNotesView === 'materials') {
+      notesListSummary.textContent = `${getMaterialTypeFilterLabel()} · ${visibleCount}/${materialCount} 个资料`;
+    } else if (selectedNotesView === 'notes') {
+      notesListSummary.textContent = `${visibleCount}/${normalNoteCount} 条笔记`;
+    } else {
+      notesListSummary.textContent = `${visibleCount}/${totalCount} 项`;
+    }
+  }
+
   function createNoteExcerpt(note, pdfInfo) {
     if (pdfInfo) return 'PDF 资料 · 首页缩略图预览 · 点击打开阅读器';
     if (!note || !note.content) return '暂无内容';
@@ -6281,9 +6436,29 @@ function initNotesFeature() {
   function renderNotesGrid() {
     if (!notesGrid) return;
     notesGrid.innerHTML = '';
+    syncNotesViewToolbar();
     
     // Filter
     let filtered = notesDB.notes;
+    const totalCount = notesDB.notes.length;
+    const materialInfoById = new Map();
+
+    notesDB.notes.forEach(note => {
+      if (note?.isMaterial) {
+        materialInfoById.set(note.id, getMaterialInfo(note));
+      }
+    });
+
+    if (selectedNotesView === 'notes') {
+      filtered = filtered.filter(note => !note.isMaterial);
+    } else if (selectedNotesView === 'materials') {
+      filtered = filtered.filter(note => {
+        if (!note.isMaterial) return false;
+        if (selectedMaterialType === 'all') return true;
+        const info = materialInfoById.get(note.id);
+        return info?.typeKey === selectedMaterialType;
+      });
+    }
     
     // Category filter
     if (selectedNoteCategory !== 'all') {
@@ -6297,10 +6472,13 @@ function initNotesFeature() {
     // Global search filter
     if (notesSearchQuery) {
       const q = notesSearchQuery.toLowerCase();
-      filtered = filtered.filter(n => 
-        (n.title && n.title.toLowerCase().includes(q)) || 
-        (n.content && n.content.toLowerCase().includes(q))
-      );
+      filtered = filtered.filter(n => {
+        if (n.isMaterial) {
+          return createMaterialSearchText(n, materialInfoById.get(n.id)).includes(q);
+        }
+        return (n.title && n.title.toLowerCase().includes(q)) ||
+          (n.content && n.content.toLowerCase().includes(q));
+      });
     }
 
     filtered = [...filtered].sort((a, b) => {
@@ -6308,16 +6486,19 @@ function initNotesFeature() {
       const timeB = Number(b?.updatedAt || b?.createdAt || 0);
       return timeB - timeA;
     });
+    updateNotesListSummary(filtered.length, totalCount);
     
     if (filtered.length === 0) {
+      const emptyText = selectedNotesView === 'materials' ? '没有找到符合条件的资料' : '没有找到符合条件的笔记';
+      const emptyHint = selectedNotesView === 'materials' ? '点击左侧“上传”导入 PDF、图片或 Office 文档。' : '点击右上角“新建笔记”开始记录学习灵感！';
       notesGrid.innerHTML = `
         <div style="grid-column: 1/-1; text-align:center; padding: 60px 20px; color: var(--text-muted);">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:48px; height:48px; opacity:0.5; margin-bottom:12px;">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
             <polyline points="14 2 14 8 20 8"></polyline>
           </svg>
-          <p style="margin:0; font-size:14px;">没有找到符合条件的笔记</p>
-          <span style="font-size:12px; opacity:0.7;">点击右上角“新建笔记”开始记录学习灵感！</span>
+          <p style="margin:0; font-size:14px;">${emptyText}</p>
+          <span style="font-size:12px; opacity:0.7;">${emptyHint}</span>
         </div>
       `;
       return;
@@ -6329,7 +6510,13 @@ function initNotesFeature() {
       const pdfInfo = extractPdfMaterialInfo(note);
       const imageUrl = !pdfInfo ? extractNoteImageUrl(note) : null;
       const isImageMaterial = Boolean(note.isMaterial && imageUrl && !pdfInfo);
+      const materialInfo = materialInfoById.get(note.id);
+      const isMaterialManagementView = selectedNotesView === 'materials';
       let pdfThumbContainer = null;
+
+      if (note.isMaterial) {
+        card.classList.add('material-note-card');
+      }
 
       if (pdfInfo) {
         card.classList.add('pdf-note-card');
@@ -6344,18 +6531,54 @@ function initNotesFeature() {
         card.appendChild(thumbContainer);
       }
 
-      if (!isImageMaterial) {
+      if (note.isMaterial && isMaterialManagementView) {
+        const titleRow = document.createElement('div');
+        titleRow.className = 'material-card-title';
+        const title = document.createElement('h3');
+        title.textContent = materialInfo?.title || note.title || '未命名资料';
+        const typeChip = document.createElement('span');
+        typeChip.className = 'material-type-chip';
+        typeChip.textContent = materialInfo?.typeLabel || '资料';
+        titleRow.appendChild(title);
+        titleRow.appendChild(typeChip);
+        card.appendChild(titleRow);
+
+        const materialPath = document.createElement('div');
+        materialPath.className = 'material-card-path';
+        const sizeText = formatMaterialSize(materialInfo?.size);
+        materialPath.textContent = [sizeText, materialInfo?.path || '历史资料记录，未保存原文件路径'].filter(Boolean).join(' · ');
+        materialPath.title = materialInfo?.path || '';
+        card.appendChild(materialPath);
+      } else if (!isImageMaterial) {
         const title = document.createElement('h3');
         title.textContent = note.title || '无标题笔记';
         card.appendChild(title);
       }
 
-      if (!isImageMaterial && !pdfInfo) {
+      if (!note.isMaterial && !isImageMaterial && !pdfInfo) {
         // Excerpt (strip markdown syntax briefly for preview)
         const excerpt = document.createElement('div');
         excerpt.className = 'note-card-excerpt';
         excerpt.textContent = createNoteExcerpt(note, pdfInfo);
         card.appendChild(excerpt);
+      }
+
+      if (note.isMaterial && isMaterialManagementView) {
+        const actions = document.createElement('div');
+        actions.className = 'material-card-actions';
+        actions.innerHTML = `
+          <button type="button" data-action="open" ${materialInfo?.canOpen ? '' : 'disabled'}>打开</button>
+          <button type="button" data-action="rename" ${materialInfo?.canOpen ? '' : 'disabled'}>重命名</button>
+          <button type="button" data-action="link-note">关联笔记</button>
+          <button type="button" data-action="delete" class="danger">删除</button>
+        `;
+        actions.addEventListener('click', async (event) => {
+          const actionBtn = event.target?.closest ? event.target.closest('button[data-action]') : null;
+          if (!actionBtn || actionBtn.disabled) return;
+          event.stopPropagation();
+          await handleMaterialCardAction(actionBtn.dataset.action, note, materialInfo);
+        });
+        card.appendChild(actions);
       }
       
       // Meta row
@@ -6422,11 +6645,6 @@ function initNotesFeature() {
     return note.content.includes('pdf-native-reader') || note.content.includes('pdf-container');
   }
 
-  function isImageMaterialNote(note) {
-    if (!note || !note.isMaterial || isPdfMaterialNote(note)) return false;
-    return Boolean(extractNoteImageUrl(note));
-  }
-
   function syncMaterialCategoryControl(visible) {
     if (!materialCategoryControl || !materialCategorySelect) return;
 
@@ -6440,7 +6658,6 @@ function initNotesFeature() {
   function toggleEditorMode(isEdit) {
     const isMaterial = currentEditingNote && currentEditingNote.isMaterial;
     const isPdfMaterial = isPdfMaterialNote(currentEditingNote);
-    const isImageMaterial = isImageMaterialNote(currentEditingNote);
     const editorTitleRow = document.querySelector('.editor-title-row');
     const editorMetaInfo = document.querySelector('.editor-meta-info');
     currentEditorIsEditMode = Boolean(isEdit && !isMaterial);
@@ -6448,7 +6665,7 @@ function initNotesFeature() {
     if (noteEditorView) {
       noteEditorView.classList.toggle('pdf-reading-mode', isPdfMaterial);
     }
-    syncMaterialCategoryControl(isImageMaterial);
+    syncMaterialCategoryControl(Boolean(isMaterial && !isPdfMaterial));
 
     if (isMaterial) {
       currentEditorIsEditMode = false;
@@ -6630,6 +6847,124 @@ function initNotesFeature() {
 
   async function saveCurrentPdfNoteCategory(categoryId) {
     await saveCurrentMaterialNoteCategory(categoryId);
+  }
+
+  function updateNoteInMemory(note) {
+    const existingIdx = notesDB.notes.findIndex(item => item.id === note.id);
+    if (existingIdx !== -1) {
+      notesDB.notes[existingIdx] = note;
+    }
+  }
+
+  async function renameMaterialNote(note, info) {
+    if (!note || !info?.path) {
+      showBottomTip('该历史资料没有可重命名的原文件路径。', 'warning');
+      return;
+    }
+
+    const currentName = info.name || path.basename(info.path);
+    const requestedName = prompt('请输入新的资料文件名：', currentName);
+    if (requestedName === null) return;
+
+    const result = await ipcRenderer.invoke('rename-material-file', info.path, requestedName);
+    if (!result || !result.success) {
+      showBottomTip(result?.error || '资料重命名失败', 'error');
+      return;
+    }
+
+    const oldPath = info.path;
+    const oldName = currentName;
+    const newName = result.name || path.basename(result.newPath);
+    const newExt = normalizeExtension(result.extension || path.extname(newName));
+    note.title = path.basename(newName, newExt) || note.title || '未命名资料';
+    note.materialPath = result.newPath;
+    note.materialName = newName;
+    note.materialExtension = newExt;
+    note.materialSize = result.size || note.materialSize || null;
+    note.content = rewriteMaterialContentPath(note.content, oldPath, result.newPath);
+    note.content = rewriteMaterialContentName(note.content, oldName, newName, info);
+    note.updatedAt = Date.now();
+
+    updateNoteInMemory(note);
+    await ipcRenderer.invoke('save-notes-db', notesDB);
+    renderSidebarFilters();
+    renderNotesGrid();
+    showBottomTip('资料已重命名', 'success');
+  }
+
+  async function deleteMaterialNote(note, info) {
+    if (!note) return;
+    const fileText = info?.path ? '并删除资料库中的文件副本' : '仅删除资料记录';
+    if (!confirm(`确认删除资料“${note.title || info?.name || '未命名资料'}”吗？将${fileText}，此操作无法撤销。`)) {
+      return;
+    }
+
+    if (info?.path) {
+      const result = await ipcRenderer.invoke('delete-material-file', info.path);
+      if (!result || !result.success) {
+        showBottomTip(result?.error || '资料文件删除失败', 'error');
+        return;
+      }
+    }
+
+    clearNoteDraft(note.id);
+    notesDB.notes = notesDB.notes.filter(item => item.id !== note.id);
+    await ipcRenderer.invoke('save-notes-db', notesDB);
+    renderSidebarFilters();
+    renderNotesGrid();
+    showBottomTip('资料已删除', 'success');
+  }
+
+  async function createLinkedNoteFromMaterial(note, info) {
+    if (!note) return;
+    const now = Date.now();
+    const title = info?.title || note.title || '学习资料';
+    const materialPathLine = info?.path ? `> 路径：\`${info.path}\`\n` : '';
+    const newNote = {
+      id: 'note_' + now,
+      title: `关于《${title}》的学习笔记`,
+      content: `> 关联资料：**${title}**\n> 类型：${info?.typeLabel || '资料'}\n${materialPathLine}\n## 学习记录\n\n`,
+      categoryId: note.categoryId || 'uncategorized',
+      videoPath: currentFilePath || null,
+      videoName: currentFilePath ? path.basename(currentFilePath) : null,
+      relatedMaterialId: note.id,
+      relatedMaterialTitle: title,
+      materialPath: info?.path || null,
+      createdAt: now,
+      updatedAt: now
+    };
+
+    notesDB.notes.push(newNote);
+    await ipcRenderer.invoke('save-notes-db', notesDB);
+    renderSidebarFilters();
+    renderNotesGrid();
+    openNoteInEditor(newNote, true);
+    showBottomTip('已创建关联笔记', 'success');
+  }
+
+  async function handleMaterialCardAction(action, note, info) {
+    if (action === 'open') {
+      if (!info?.path) {
+        showBottomTip('该历史资料没有可打开的原文件路径。', 'warning');
+        return;
+      }
+      await ipcRenderer.invoke('open-path', info.path);
+      return;
+    }
+
+    if (action === 'rename') {
+      await renameMaterialNote(note, info);
+      return;
+    }
+
+    if (action === 'link-note') {
+      await createLinkedNoteFromMaterial(note, info);
+      return;
+    }
+
+    if (action === 'delete') {
+      await deleteMaterialNote(note, info);
+    }
   }
 
   async function hydratePdfReaders(container) {
@@ -7026,7 +7361,7 @@ function initNotesFeature() {
           noteContent = material.text || '';
         } else if (extLower === '.pdf') {
           noteContent = createPdfReaderBlock(material);
-        } else if (['.png', '.jpg', '.jpeg'].includes(extLower)) {
+        } else if (['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.svg', '.avif', '.tif', '.tiff'].includes(extLower)) {
           const streamUrl = `http://localhost:30032/screenshot?path=${encodeURIComponent(material.absolutePath)}`;
           noteContent = `\n![${material.name}](${streamUrl})\n`;
         } else {
@@ -7056,6 +7391,10 @@ function initNotesFeature() {
           videoPath: currentFilePath || null,
           videoName: currentFilePath ? path.basename(currentFilePath) : null,
           isMaterial: true,
+          materialPath: material.absolutePath,
+          materialName: material.name,
+          materialExtension: extLower,
+          materialSize: material.size,
           createdAt: Date.now(),
           updatedAt: Date.now()
         };
@@ -7207,6 +7546,25 @@ function initNotesFeature() {
   if (noteCategorySelect) {
     noteCategorySelect.addEventListener('change', () => {
       scheduleNoteAutoSave({ immediate: true });
+    });
+  }
+
+  if (notesViewTabs.length > 0) {
+    notesViewTabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        selectedNotesView = tab.dataset.notesView || 'all';
+        if (selectedNotesView !== 'materials') {
+          selectedMaterialType = 'all';
+        }
+        renderNotesGrid();
+      });
+    });
+  }
+
+  if (materialTypeFilter) {
+    materialTypeFilter.addEventListener('change', () => {
+      selectedMaterialType = materialTypeFilter.value || 'all';
+      renderNotesGrid();
     });
   }
 

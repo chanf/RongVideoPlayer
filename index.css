@@ -3838,6 +3838,66 @@ body[data-theme="ningzhi"] .tree-cat-badge.inherited {
   overflow-y: auto;
 }
 
+.notes-list-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+  box-sizing: border-box;
+}
+
+.notes-view-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid var(--border-color);
+}
+
+.notes-view-tab {
+  min-width: 54px;
+  border: none;
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.notes-view-tab.active {
+  background: var(--accent-color);
+  color: white;
+}
+
+.material-type-filter {
+  min-width: 116px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-main);
+  font-size: 12px;
+  padding: 0 8px;
+  outline: none;
+}
+
+.material-type-filter option {
+  color: #111827;
+}
+
+.notes-list-summary {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .notes-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -3931,6 +3991,81 @@ body[data-theme="ningzhi"] .tree-cat-badge.inherited {
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.08em;
+}
+
+.material-note-card {
+  position: relative;
+}
+
+.material-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.material-card-title h3 {
+  flex: 1;
+  min-width: 0;
+}
+
+.material-type-chip {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.material-card-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.material-card-actions button {
+  min-width: 0;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text-main);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.material-card-actions button:hover {
+  border-color: var(--accent-color);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.material-card-actions button.danger {
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+.material-card-actions button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.material-card-path {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.material-note-card .note-card-meta {
+  margin-top: 0;
 }
 .note-card h3 {
   font-size: 15px;

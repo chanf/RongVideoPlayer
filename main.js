@@ -1388,6 +1388,14 @@ function getUploadedMaterialsDir() {
   return path.join(getActiveNotesLibraryDir(), MATERIALS_DIR_NAME);
 }
 
+function isPathInsideDirectory(targetPath, parentDir) {
+  if (!targetPath || !parentDir) return false;
+  const resolvedTarget = path.resolve(targetPath);
+  const resolvedParent = path.resolve(parentDir);
+  const relative = path.relative(resolvedParent, resolvedTarget);
+  return Boolean(relative && !relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
 function readNotesDBFromFile(filePath) {
   if (fs.existsSync(filePath)) {
     try {
@@ -1650,14 +1658,14 @@ ipcMain.handle('upload-material', async () => {
     title: '选择要上传的学习资料',
     properties: ['openFile'],
     filters: [
-      { name: '所有支持类型', extensions: ['md', 'txt', 'pdf', 'docx', 'doc', 'pptx', 'ppt', 'xlsx', 'xls', 'png', 'jpg', 'jpeg'] },
+      { name: '所有支持类型', extensions: ['md', 'txt', 'pdf', 'docx', 'doc', 'pptx', 'ppt', 'xlsx', 'xls', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'svg', 'avif', 'tif', 'tiff'] },
       { name: 'Markdown文档', extensions: ['md'] },
       { name: '文本文档', extensions: ['txt'] },
       { name: 'PDF文档', extensions: ['pdf'] },
       { name: 'Word文档', extensions: ['docx', 'doc'] },
       { name: 'PPT幻灯片', extensions: ['pptx', 'ppt'] },
       { name: 'Excel表格', extensions: ['xlsx', 'xls'] },
-      { name: '图片文件', extensions: ['png', 'jpg', 'jpeg'] }
+      { name: '图片文件', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'svg', 'avif', 'tif', 'tiff'] }
     ]
   });
 
@@ -1694,6 +1702,87 @@ ipcMain.handle('upload-material', async () => {
   } catch (e) {
     console.error('Failed to upload material:', e);
     throw e;
+  }
+});
+
+function createUniqueMaterialPath(targetDir, fileName) {
+  const parsed = path.parse(fileName);
+  let candidate = path.join(targetDir, fileName);
+  let index = 1;
+
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(targetDir, `${parsed.name}-${index}${parsed.ext}`);
+    index += 1;
+  }
+
+  return candidate;
+}
+
+ipcMain.handle('rename-material-file', async (event, oldPath, requestedName) => {
+  try {
+    const materialsDir = getUploadedMaterialsDir();
+    if (!isPathInsideDirectory(oldPath, materialsDir)) {
+      throw new Error('只能重命名当前资料库中的文件');
+    }
+    if (!fs.existsSync(oldPath)) {
+      throw new Error('原资料文件不存在');
+    }
+
+    const trimmedName = String(requestedName || '').trim();
+    if (!trimmedName) {
+      throw new Error('新文件名不能为空');
+    }
+    if (trimmedName.includes('/') || trimmedName.includes('\\')) {
+      throw new Error('文件名不能包含路径分隔符');
+    }
+
+    const oldExt = path.extname(oldPath);
+    const requestedExt = path.extname(trimmedName);
+    const finalName = requestedExt ? trimmedName : `${trimmedName}${oldExt}`;
+    const requestedPath = path.join(materialsDir, finalName);
+    if (path.resolve(requestedPath) === path.resolve(oldPath)) {
+      const stats = fs.statSync(oldPath);
+      return {
+        success: true,
+        oldPath,
+        newPath: oldPath,
+        name: path.basename(oldPath),
+        extension: path.extname(oldPath).toLowerCase(),
+        size: stats.size
+      };
+    }
+
+    const newPath = createUniqueMaterialPath(materialsDir, finalName);
+    fs.renameSync(oldPath, newPath);
+    const stats = fs.statSync(newPath);
+
+    return {
+      success: true,
+      oldPath,
+      newPath,
+      name: path.basename(newPath),
+      extension: path.extname(newPath).toLowerCase(),
+      size: stats.size
+    };
+  } catch (err) {
+    console.error('Failed to rename material file:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('delete-material-file', async (event, materialPath) => {
+  try {
+    const materialsDir = getUploadedMaterialsDir();
+    if (!isPathInsideDirectory(materialPath, materialsDir)) {
+      throw new Error('只能删除当前资料库中的文件');
+    }
+    if (fs.existsSync(materialPath)) {
+      fs.unlinkSync(materialPath);
+    }
+    return { success: true };
+  } catch (err) {
+    console.error('Failed to delete material file:', err);
+    return { success: false, error: err.message };
   }
 });
 
