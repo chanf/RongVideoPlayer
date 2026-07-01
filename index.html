@@ -258,6 +258,7 @@
           <p id="screenshot-toast-time">00:00</p>
         </div>
       </div>
+      <div id="app-bottom-tip" class="app-bottom-tip hidden" role="status" aria-live="polite"></div>
 
       <!-- Welcome Overlay / No Video Loaded Screen -->
       <div class="welcome-overlay" id="welcome-overlay">
@@ -922,6 +923,19 @@
               <div class="setting-item-control">
                 <label class="switch">
                   <input type="checkbox" id="set-auto-resume" checked>
+                  <span class="slider-toggle"></span>
+                </label>
+              </div>
+            </div>
+            <div class="setting-item-row">
+              <div class="setting-item-label">
+                <h4>笔记保存在 iCloud</h4>
+                <p>macOS 下将笔记数据库和上传资料副本迁移到 iCloud Drive 同步目录</p>
+                <span id="set-notes-library-path" class="setting-path-hint">正在检测笔记库位置...</span>
+              </div>
+              <div class="setting-item-control">
+                <label class="switch">
+                  <input type="checkbox" id="set-notes-icloud">
                   <span class="slider-toggle"></span>
                 </label>
               </div>

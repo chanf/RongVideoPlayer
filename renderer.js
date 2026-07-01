@@ -695,7 +695,7 @@ async function clearPlaybackHistory() {
 async function clearCompletedHistory() {
   const completedItems = recentList.filter(item => item.progress >= 95);
   if (completedItems.length === 0) {
-    alert('当前没有已播放完成的视频记录！');
+    showBottomTip('当前没有已播放完成的视频记录！');
     return;
   }
 
@@ -999,7 +999,7 @@ function createTreeNodeDOM(node, depth = 0) {
               if (tree) renderDirectoryTree(tree);
             }
           } else {
-            alert('删除目录失败，请检查目录权限或文件是否被占用。');
+            showBottomTip('删除目录失败，请检查目录权限或文件是否被占用。');
           }
         }
       });
@@ -1433,7 +1433,7 @@ function openMediaFile(filePath, mediaKind = null) {
     openDocumentInMainViewer(filePath);
     return;
   }
-  alert('暂不支持该文件类型');
+  showBottomTip('暂不支持该文件类型');
 }
 
 function preloadMainImage(src, alt) {
@@ -2468,7 +2468,7 @@ async function playVideo(filePath, startSec = 0, autoplay = true) {
     const meta = await ipcRenderer.invoke('probe-video', filePath);
     
     if (!meta) {
-      alert('视频加载失败，请检查文件是否存在！');
+      showBottomTip('视频加载失败，请检查文件是否存在！');
       hideLoading();
       return;
     }
@@ -2527,7 +2527,7 @@ async function playVideo(filePath, startSec = 0, autoplay = true) {
 
   } catch (err) {
     console.error('Error during playVideo:', err);
-    alert('视频播放发生错误！');
+    showBottomTip('视频播放发生错误！');
     hideLoading();
   }
 }
@@ -2968,6 +2968,46 @@ function hideControls() {
 // -------------------------------------------------------------
 // Loading overlay helper
 // -------------------------------------------------------------
+let bottomTipTimer = null;
+
+function showBottomTip(message, type = '') {
+  let tip = document.getElementById('app-bottom-tip');
+  if (!tip) {
+    tip = document.createElement('div');
+    tip.id = 'app-bottom-tip';
+    tip.className = 'app-bottom-tip hidden';
+    tip.setAttribute('role', 'status');
+    tip.setAttribute('aria-live', 'polite');
+  }
+  if (tip.parentElement !== document.body) {
+    document.body.appendChild(tip);
+  }
+
+  const text = String(message || '').trim();
+  if (!text) return;
+
+  const inferredType = type || (
+    /(失败|错误|拒绝|无法|异常)/.test(text) ? 'error' :
+      /(警告|确认|请先|请输入|不正确|不存在|没有|不能|暂不支持)/.test(text) ? 'warning' :
+        /(成功|已保存|已删除|已复制|已上线|已进入|完成)/.test(text) ? 'success' : ''
+  );
+
+  tip.textContent = text;
+  tip.classList.remove('hidden', 'success', 'error', 'warning');
+  if (inferredType) tip.classList.add(inferredType);
+  requestAnimationFrame(() => tip.classList.add('visible'));
+
+  if (bottomTipTimer) clearTimeout(bottomTipTimer);
+  bottomTipTimer = setTimeout(() => {
+    tip.classList.remove('visible');
+    bottomTipTimer = setTimeout(() => {
+      tip.classList.add('hidden');
+      tip.classList.remove('success', 'error', 'warning');
+      bottomTipTimer = null;
+    }, 240);
+  }, 2000);
+}
+
 function showLoading(text) {
   loadingText.textContent = text;
   loadingOverlay.classList.add('visible');
@@ -3322,7 +3362,7 @@ async function parseBiliUrl() {
     input.value = ''; // clean input
     
   } catch (err) {
-    alert('解析链接失败: ' + err.message);
+    showBottomTip('解析链接失败: ' + err.message);
   } finally {
     hideLoading();
   }
@@ -3350,7 +3390,7 @@ function updateSelectedCountLabel() {
 
 async function startBiliDownload() {
   if (selectedEpisodesSet.size === 0) {
-    alert('请先勾选需要下载的选集');
+    showBottomTip('请先勾选需要下载的选集');
     return;
   }
 
@@ -4008,7 +4048,7 @@ function initOnlineCommunity() {
         
         refreshTasksList();
       } else {
-        alert('该合集内不包含 B站 视频资源（均为直链），请点击单集一键播放！');
+        showBottomTip('该合集内不包含 B站 视频资源（均为直链），请点击单集一键播放！');
       }
     });
   }
@@ -4078,7 +4118,7 @@ function initOnlineCommunity() {
         const biliUrl = document.getElementById('share-bili-url').value.trim();
         const bvidMatch = biliUrl.match(/video\/(BV[a-zA-Z0-9]+)/);
         if (!bvidMatch) {
-          alert('请输入正确的 Bilibili 视频链接，包含 BV 号！');
+          showBottomTip('请输入正确的 Bilibili 视频链接，包含 BV 号！');
           return;
         }
         
@@ -4096,7 +4136,7 @@ function initOnlineCommunity() {
             }));
           }
         } catch (err) {
-          alert('解析B站视频失败: ' + err.message + '，将采用单视频打底！');
+          showBottomTip('解析B站视频失败: ' + err.message + '，将采用单视频打底！');
           items = [{
             title: title,
             index: 1,
@@ -4110,7 +4150,7 @@ function initOnlineCommunity() {
         // Custom link list parsing
         const rawLinks = document.getElementById('share-custom-links').value.trim();
         if (!rawLinks) {
-          alert('请输入自定义播放直链列表！');
+          showBottomTip('请输入自定义播放直链列表！');
           return;
         }
         
@@ -4127,7 +4167,7 @@ function initOnlineCommunity() {
         });
         
         if (items.length === 0) {
-          alert('直链列表解析格式不正确，需符合：标题,直链链接，一行一条！');
+          showBottomTip('直链列表解析格式不正确，需符合：标题,直链链接，一行一条！');
           return;
         }
       }
@@ -4149,7 +4189,7 @@ function initOnlineCommunity() {
       communityCollections.push(newCol);
       saveCollections();
       
-      alert('提交成功！合集已进入管理员审核队列，通过后即可在广场展示。');
+      showBottomTip('提交成功！合集已进入管理员审核队列，通过后即可在广场展示。');
       closeShareModal();
       
       // Refresh admin tab values
@@ -4196,7 +4236,7 @@ function initOnlineCommunity() {
         adminDashboardScreen.style.display = 'flex';
         loadAdminDashboard();
       } else {
-        alert('安全凭证错误，拒绝访问！');
+        showBottomTip('安全凭证错误，拒绝访问！');
       }
     });
   }
@@ -4294,19 +4334,19 @@ function initOnlineCommunity() {
           const name = nameInput.value.trim();
 
           if (!id || !name) {
-            alert('请填满所有字段！');
+            showBottomTip('请填满所有字段！');
             return;
           }
           if (!/^[a-z0-9_-]+$/.test(id)) {
-            alert('分类标识只能包含小写英文、数字、下划线或连字符！');
+            showBottomTip('分类标识只能包含小写英文、数字、下划线或连字符！');
             return;
           }
           if (id === 'all') {
-            alert('“all” 是全部选项的保留字，请使用其他名称！');
+            showBottomTip('“all” 是全部选项的保留字，请使用其他名称！');
             return;
           }
           if (communityCategories.some(c => c.id === id)) {
-            alert('此分类标识已经存在！');
+            showBottomTip('此分类标识已经存在！');
             return;
           }
 
@@ -4400,7 +4440,7 @@ function initOnlineCommunity() {
     if (colIdx > -1) {
       if (decision === 'approve') {
         communityCollections[colIdx].status = 'approved';
-        alert('合集已上线！');
+        showBottomTip('合集已上线！');
       } else if (decision === 'reject') {
         const reason = prompt('请输入驳回原因:', '内容不符合分享规范');
         if (reason === null) return; // cancelled
@@ -4441,11 +4481,11 @@ function initOnlineCommunity() {
 // Capture Video Frame function
 async function captureVideoFrame() {
   if (currentViewerMode !== 'video') {
-    alert('当前没有播放视频，无法截屏！');
+    showBottomTip('当前没有播放视频，无法截屏！');
     return;
   }
   if (!videoElement || videoElement.readyState < 2 || !currentFilePath) {
-    alert('当前没有播放视频，无法截屏！');
+    showBottomTip('当前没有播放视频，无法截屏！');
     return;
   }
 
@@ -5081,9 +5121,9 @@ function initScreenshotsLibrary() {
       if (!activeLightboxItem) return;
       const success = await ipcRenderer.invoke('copy-image-to-clipboard', activeLightboxItem.absolutePath);
       if (success) {
-        alert('图片已复制到剪贴板！');
+        showBottomTip('图片已复制到剪贴板！');
       } else {
-        alert('复制失败，请重试');
+        showBottomTip('复制失败，请重试');
       }
     });
   }
@@ -5127,6 +5167,8 @@ function initSettings() {
 
   // Controls
   const setAutoResume = document.getElementById('set-auto-resume');
+  const setNotesIcloud = document.getElementById('set-notes-icloud');
+  const setNotesLibraryPath = document.getElementById('set-notes-library-path');
   const setAutoplayNext = document.getElementById('set-autoplay-next');
   const setthemeSelect = document.getElementById('set-theme-select');
   const setDefaultSpeed = document.getElementById('set-default-speed');
@@ -5180,9 +5222,33 @@ function initSettings() {
       setDownloadPathLabel.textContent = customDownloadPath || '系统默认下载目录';
     }
 
+    await refreshNotesStorageStatus();
+
     // Categories list load
     screenshotsDB = await ipcRenderer.invoke('get-screenshots-db');
     renderSettingsCategories();
+  }
+
+  async function refreshNotesStorageStatus() {
+    if (!setNotesIcloud && !setNotesLibraryPath) return null;
+
+    const status = await ipcRenderer.invoke('get-notes-storage-status');
+    if (setNotesIcloud) {
+      setNotesIcloud.checked = Boolean(status.enabled);
+      setNotesIcloud.disabled = !status.isMac || !status.iCloudAvailable;
+    }
+    if (setNotesLibraryPath) {
+      if (!status.isMac) {
+        setNotesLibraryPath.textContent = '仅 macOS 支持 iCloud 笔记同步';
+      } else if (!status.iCloudAvailable) {
+        setNotesLibraryPath.textContent = '未检测到 iCloud Drive，请先在系统设置中启用 iCloud Drive';
+      } else {
+        const modeText = status.enabled ? 'iCloud 笔记库' : '本地笔记库';
+        setNotesLibraryPath.textContent = `${modeText}: ${status.activeDir}`;
+        setNotesLibraryPath.title = status.activeDir;
+      }
+    }
+    return status;
   }
 
   // Render categories inside settings panel
@@ -5264,6 +5330,30 @@ function initSettings() {
   if (setAutoResume) {
     setAutoResume.addEventListener('change', () => {
       localStorage.setItem('rong_setting_auto_resume_folder', setAutoResume.checked);
+    });
+  }
+
+  if (setNotesIcloud) {
+    setNotesIcloud.addEventListener('change', async () => {
+      const enabled = setNotesIcloud.checked;
+      setNotesIcloud.disabled = true;
+      showLoading(enabled ? '正在迁移笔记库到 iCloud...' : '正在迁移笔记库到本地...');
+
+      try {
+        const result = await ipcRenderer.invoke('set-notes-icloud-enabled', enabled);
+        if (!result || !result.success) {
+          throw new Error(result?.error || '笔记库迁移失败');
+        }
+        await refreshNotesStorageStatus();
+        notesDB = await ipcRenderer.invoke('get-notes-db');
+        showBottomTip(enabled ? '笔记库已迁移到 iCloud' : '笔记库已迁移到本地', 'success');
+      } catch (err) {
+        console.error('Failed to switch notes iCloud setting:', err);
+        showBottomTip(err.message || '笔记库迁移失败', 'error');
+        await refreshNotesStorageStatus();
+      } finally {
+        hideLoading();
+      }
     });
   }
 
@@ -5370,7 +5460,7 @@ function initSettings() {
       
       // Prevent duplicates
       if (screenshotsDB.categories.some(c => c.name === name)) {
-        alert('分类已存在！');
+        showBottomTip('分类已存在！');
         return;
       }
       
@@ -5769,6 +5859,12 @@ function initNotesFeature() {
         (n.content && n.content.toLowerCase().includes(q))
       );
     }
+
+    filtered = [...filtered].sort((a, b) => {
+      const timeA = Number(a?.updatedAt || a?.createdAt || 0);
+      const timeB = Number(b?.updatedAt || b?.createdAt || 0);
+      return timeB - timeA;
+    });
     
     if (filtered.length === 0) {
       notesGrid.innerHTML = `
@@ -6518,7 +6614,7 @@ function initNotesFeature() {
 
       } catch (e) {
         console.error('Failed to upload/import material:', e);
-        alert('上传资料失败：' + e.message);
+        showBottomTip('上传资料失败：' + e.message);
       }
     });
   }
@@ -6547,9 +6643,11 @@ function initNotesFeature() {
       
       await ipcRenderer.invoke('save-notes-db', notesDB);
       
-      alert('保存成功！');
-      closeEditor();
-      loadAndRenderNotes();
+      showBottomTip('保存成功！');
+      renderPreview();
+      renderSidebarFilters();
+      renderNotesGrid();
+      toggleEditorMode(false);
     });
   }
 
@@ -6759,7 +6857,7 @@ function initNotesFeature() {
 
   function confirmAndInsertScreenshot() {
     if (!selectedInsertShot) {
-      alert('请先选择一张图片！');
+      showBottomTip('请先选择一张图片！');
       return;
     }
     

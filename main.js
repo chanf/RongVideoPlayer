@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const crypto = require('crypto');
+const os = require('os');
 const { spawn, exec, execFile } = require('child_process');
 
 // electron-builder's `portable` target injects PORTABLE_EXECUTABLE_DIR at launch.
@@ -17,6 +18,7 @@ let mainWindow;
 let videoServer;
 const SERVER_PORT = 30032;
 const HISTORY_FILE = path.join(app.getPath('userData'), 'playback-history.json');
+const APP_SETTINGS_FILE = path.join(app.getPath('userData'), 'app-settings.json');
 
 // Platform constants used across binary resolution, error messages, and feature gating.
 const IS_WIN = process.platform === 'win32';
@@ -555,8 +557,6 @@ ipcMain.handle('save-history', async (event, historyData) => {
 // ========================================================
 // Bilibili 登录与下载引擎 (Bilibili Downloader Engine)
 // ========================================================
-
-const os = require('os');
 
 let sessdata = null;
 const downloaderTasks = new Map();
@@ -1331,25 +1331,208 @@ ipcMain.handle('copy-image-to-clipboard', async (event, absolutePath) => {
 // ==========================================
 // 学习笔记数据管理 (Notes Management DB)
 // ==========================================
-const NOTES_DB_FILE = path.join(app.getPath('userData'), 'notes-db.json');
+const NOTES_DB_FILENAME = 'notes-db.json';
+const MATERIALS_DIR_NAME = 'UploadedMaterials';
 
-function getNotesDB() {
-  if (fs.existsSync(NOTES_DB_FILE)) {
+function getAppSettings() {
+  try {
+    if (fs.existsSync(APP_SETTINGS_FILE)) {
+      return JSON.parse(fs.readFileSync(APP_SETTINGS_FILE, 'utf8'));
+    }
+  } catch (err) {
+    console.error('Failed to read app settings:', err);
+  }
+  return {};
+}
+
+function saveAppSettings(settings) {
+  try {
+    fs.mkdirSync(path.dirname(APP_SETTINGS_FILE), { recursive: true });
+    fs.writeFileSync(APP_SETTINGS_FILE, JSON.stringify(settings || {}, null, 2), 'utf8');
+    return true;
+  } catch (err) {
+    console.error('Failed to save app settings:', err);
+    return false;
+  }
+}
+
+function getICloudDriveDir() {
+  return path.join(os.homedir(), 'Library', 'Mobile Documents', 'com~apple~CloudDocs');
+}
+
+function getLocalNotesLibraryDir() {
+  return app.getPath('userData');
+}
+
+function getICloudNotesLibraryDir() {
+  return path.join(getICloudDriveDir(), 'Rong VideoPlayer', 'NotesLibrary');
+}
+
+function isICloudDriveAvailable() {
+  return IS_MAC && fs.existsSync(getICloudDriveDir());
+}
+
+function getActiveNotesLibraryDir() {
+  const settings = getAppSettings();
+  if (settings.notesUseIcloud && isICloudDriveAvailable()) {
+    return getICloudNotesLibraryDir();
+  }
+  return getLocalNotesLibraryDir();
+}
+
+function getNotesDBFile() {
+  return path.join(getActiveNotesLibraryDir(), NOTES_DB_FILENAME);
+}
+
+function getUploadedMaterialsDir() {
+  return path.join(getActiveNotesLibraryDir(), MATERIALS_DIR_NAME);
+}
+
+function readNotesDBFromFile(filePath) {
+  if (fs.existsSync(filePath)) {
     try {
-      return JSON.parse(fs.readFileSync(NOTES_DB_FILE, 'utf8'));
+      const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      return {
+        ...parsed,
+        notes: Array.isArray(parsed.notes) ? parsed.notes : []
+      };
     } catch (e) {
       console.error('Failed to parse notes db:', e);
     }
   }
+  return { notes: [] };
+}
+
+function mergeNotesDB(leftDb, rightDb) {
+  const merged = { ...(leftDb || {}), ...(rightDb || {}), notes: [] };
+  const notesById = new Map();
+
+  [...((leftDb && leftDb.notes) || []), ...((rightDb && rightDb.notes) || [])].forEach(note => {
+    if (!note || !note.id) return;
+    const oldNote = notesById.get(note.id);
+    const oldTime = Number(oldNote?.updatedAt || oldNote?.createdAt || 0);
+    const newTime = Number(note.updatedAt || note.createdAt || 0);
+    if (!oldNote || newTime >= oldTime) {
+      notesById.set(note.id, note);
+    }
+  });
+
+  merged.notes = Array.from(notesById.values()).sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+  return merged;
+}
+
+function replaceAllText(value, fromText, toText) {
+  if (!value || !fromText || fromText === toText) return value;
+  return String(value).split(fromText).join(toText);
+}
+
+function rewriteMaterialPathsInNotesDB(db, fromMaterialsDir, toMaterialsDir) {
+  if (!db || !Array.isArray(db.notes) || !fromMaterialsDir || !toMaterialsDir || fromMaterialsDir === toMaterialsDir) {
+    return db || { notes: [] };
+  }
+
+  const encodedFrom = encodeURIComponent(fromMaterialsDir);
+  const encodedTo = encodeURIComponent(toMaterialsDir);
+  const htmlFrom = fromMaterialsDir
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+  const htmlTo = toMaterialsDir
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  db.notes = db.notes.map(note => {
+    if (!note || typeof note.content !== 'string') return note;
+    let content = note.content;
+    content = replaceAllText(content, encodedFrom, encodedTo);
+    content = replaceAllText(content, htmlFrom, htmlTo);
+    content = replaceAllText(content, fromMaterialsDir, toMaterialsDir);
+    return { ...note, content };
+  });
+  return db;
+}
+
+function copyDirectoryIfExists(fromDir, toDir) {
+  if (!fs.existsSync(fromDir)) return;
+  fs.mkdirSync(toDir, { recursive: true });
+  fs.cpSync(fromDir, toDir, { recursive: true, force: false, errorOnExist: false });
+}
+
+function writeNotesDBToDir(libraryDir, db) {
+  fs.mkdirSync(libraryDir, { recursive: true });
+  fs.writeFileSync(path.join(libraryDir, NOTES_DB_FILENAME), JSON.stringify(db || { notes: [] }, null, 2), 'utf8');
+}
+
+function migrateNotesLibrary(targetMode) {
+  if (targetMode !== 'icloud' && targetMode !== 'local') {
+    throw new Error('未知的笔记库目标位置');
+  }
+  if (targetMode === 'icloud' && !isICloudDriveAvailable()) {
+    throw new Error('未检测到 iCloud Drive，请先在 macOS 系统设置中启用 iCloud Drive');
+  }
+
+  const sourceDir = getActiveNotesLibraryDir();
+  const targetDir = targetMode === 'icloud' ? getICloudNotesLibraryDir() : getLocalNotesLibraryDir();
+  const sourceMaterialsDir = path.join(sourceDir, MATERIALS_DIR_NAME);
+  const targetMaterialsDir = path.join(targetDir, MATERIALS_DIR_NAME);
+  const settings = getAppSettings();
+
+  if (sourceDir === targetDir) {
+    settings.notesUseIcloud = targetMode === 'icloud';
+    settings.notesLibraryUpdatedAt = Date.now();
+    saveAppSettings(settings);
+    return getNotesStorageStatus();
+  }
+
+  fs.mkdirSync(targetDir, { recursive: true });
+  if (!checkFolderWritable(targetDir)) {
+    throw new Error('目标笔记库目录不可写');
+  }
+
+  copyDirectoryIfExists(sourceMaterialsDir, targetMaterialsDir);
+
+  const sourceDb = readNotesDBFromFile(path.join(sourceDir, NOTES_DB_FILENAME));
+  const targetDb = readNotesDBFromFile(path.join(targetDir, NOTES_DB_FILENAME));
+  const rewrittenSourceDb = rewriteMaterialPathsInNotesDB(sourceDb, sourceMaterialsDir, targetMaterialsDir);
+  const mergedDb = mergeNotesDB(targetDb, rewrittenSourceDb);
+  writeNotesDBToDir(targetDir, mergedDb);
+
+  settings.notesUseIcloud = targetMode === 'icloud';
+  settings.notesLibraryUpdatedAt = Date.now();
+  saveAppSettings(settings);
+
+  return getNotesStorageStatus();
+}
+
+function getNotesStorageStatus() {
+  const settings = getAppSettings();
+  const iCloudAvailable = isICloudDriveAvailable();
+  const activeDir = getActiveNotesLibraryDir();
   return {
-    notes: []
+    success: true,
+    platform: process.platform,
+    isMac: IS_MAC,
+    iCloudAvailable,
+    enabled: Boolean(settings.notesUseIcloud && iCloudAvailable),
+    requestedEnabled: Boolean(settings.notesUseIcloud),
+    activeDir,
+    localDir: getLocalNotesLibraryDir(),
+    iCloudDir: getICloudNotesLibraryDir(),
+    notesDbPath: path.join(activeDir, NOTES_DB_FILENAME),
+    materialsDir: path.join(activeDir, MATERIALS_DIR_NAME)
   };
+}
+
+function getNotesDB() {
+  return readNotesDBFromFile(getNotesDBFile());
 }
 
 function saveNotesDB(db) {
   try {
-    fs.mkdirSync(path.dirname(NOTES_DB_FILE), { recursive: true });
-    fs.writeFileSync(NOTES_DB_FILE, JSON.stringify(db, null, 2), 'utf8');
+    const notesDbFile = getNotesDBFile();
+    fs.mkdirSync(path.dirname(notesDbFile), { recursive: true });
+    fs.writeFileSync(notesDbFile, JSON.stringify(db, null, 2), 'utf8');
     return true;
   } catch (e) {
     console.error('Failed to save notes db:', e);
@@ -1363,6 +1546,20 @@ ipcMain.handle('get-notes-db', () => {
 
 ipcMain.handle('save-notes-db', (event, db) => {
   return saveNotesDB(db);
+});
+
+ipcMain.handle('get-notes-storage-status', () => {
+  return getNotesStorageStatus();
+});
+
+ipcMain.handle('set-notes-icloud-enabled', async (event, enabled) => {
+  try {
+    const status = migrateNotesLibrary(enabled ? 'icloud' : 'local');
+    return { ...status, success: true };
+  } catch (err) {
+    console.error('Failed to switch notes storage:', err);
+    return { success: false, error: err.message, ...getNotesStorageStatus() };
+  }
 });
 
 ipcMain.handle('upload-material', async () => {
@@ -1389,7 +1586,7 @@ ipcMain.handle('upload-material', async () => {
   const name = path.basename(srcPath);
   const ext = path.extname(srcPath).toLowerCase();
   
-  const uploadDir = path.join(app.getPath('userData'), 'UploadedMaterials');
+  const uploadDir = getUploadedMaterialsDir();
   fs.mkdirSync(uploadDir, { recursive: true });
   
   const destName = `${Date.now()}_${name}`;

@@ -3065,6 +3065,48 @@ body[data-theme="ningzhi"] .admin-tab:hover {
   color: var(--text-muted);
 }
 
+.app-bottom-tip {
+  position: fixed;
+  left: 50%;
+  bottom: 34px;
+  z-index: 12000;
+  max-width: min(520px, calc(100vw - 40px));
+  padding: 11px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(14, 18, 30, 0.92);
+  color: var(--text-main);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: center;
+  box-shadow: 0 14px 34px rgba(0,0,0,0.36);
+  backdrop-filter: blur(14px);
+  transform: translate(-50%, 16px);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.22s ease, opacity 0.22s ease;
+}
+
+.app-bottom-tip.visible {
+  transform: translate(-50%, 0);
+  opacity: 1;
+}
+
+.app-bottom-tip.success {
+  border-color: rgba(34, 197, 94, 0.28);
+  background: rgba(12, 38, 26, 0.92);
+}
+
+.app-bottom-tip.error {
+  border-color: rgba(248, 113, 113, 0.3);
+  background: rgba(45, 18, 24, 0.92);
+}
+
+.app-bottom-tip.warning {
+  border-color: rgba(251, 191, 36, 0.32);
+  background: rgba(45, 32, 12, 0.92);
+}
+
 .screenshots-view {
   flex: 1;
   display: flex;
@@ -3468,6 +3510,18 @@ body[data-theme="ningzhi"] .btn-lightbox-next {
   font-size: 12px;
   color: var(--text-muted);
   margin: 0;
+}
+
+.setting-path-hint {
+  display: block;
+  max-width: 520px;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .setting-item-control {
