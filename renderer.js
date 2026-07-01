@@ -4436,13 +4436,29 @@ function initNotesFeature() {
   }
 
   // Toggle between View mode and Edit mode inside note detail pane
+  function isPdfMaterialNote(note) {
+    if (!note || !note.isMaterial || !note.content) return false;
+    return note.content.includes('pdf-native-reader') || note.content.includes('pdf-container');
+  }
+
   function toggleEditorMode(isEdit) {
     const isMaterial = currentEditingNote && currentEditingNote.isMaterial;
+    const isPdfMaterial = isPdfMaterialNote(currentEditingNote);
     const editorTitleRow = document.querySelector('.editor-title-row');
     const editorMetaInfo = document.querySelector('.editor-meta-info');
 
+    if (noteEditorView) {
+      noteEditorView.classList.toggle('pdf-reading-mode', isPdfMaterial);
+    }
+
     if (isMaterial) {
-      if (editorTitleRow) editorTitleRow.classList.remove('hidden');
+      if (editorTitleRow) {
+        if (isPdfMaterial) {
+          editorTitleRow.classList.add('hidden');
+        } else {
+          editorTitleRow.classList.remove('hidden');
+        }
+      }
       if (editorMetaInfo) editorMetaInfo.classList.add('hidden');
       if (btnEditNote) btnEditNote.classList.add('hidden');
       if (btnInsertScreenshot) btnInsertScreenshot.classList.add('hidden');
@@ -4456,6 +4472,7 @@ function initNotesFeature() {
     }
 
     // Normal notes (non-material) - restore visibility of title row and meta info
+    if (noteEditorView) noteEditorView.classList.remove('pdf-reading-mode');
     if (editorTitleRow) editorTitleRow.classList.remove('hidden');
     if (editorMetaInfo) editorMetaInfo.classList.remove('hidden');
 
@@ -4495,6 +4512,7 @@ function initNotesFeature() {
   // Close editor and go back to grid
   function closeEditor() {
     currentEditingNote = null;
+    if (noteEditorView) noteEditorView.classList.remove('pdf-reading-mode');
     noteEditorView.classList.add('hidden');
     notesGridView.classList.remove('hidden');
   }
@@ -4536,6 +4554,325 @@ function initNotesFeature() {
     ipcRenderer.invoke('open-path', filePath);
   };
 
+  function escapeHtmlText(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function createPdfReaderBlock(material) {
+    const escapedPath = escapeHtmlText(material.absolutePath);
+    const escapedName = escapeHtmlText(material.name);
+    const sizeMb = (material.size / 1024 / 1024).toFixed(2);
+
+    return [
+      `<div class="pdf-native-reader" data-pdf-path="${escapedPath}" data-pdf-title="${escapedName}">`,
+      `  <div class="pdf-reader-placeholder">`,
+      `    <div class="pdf-reader-placeholder-icon">PDF</div>`,
+      `    <div>`,
+      `      <div class="pdf-reader-placeholder-title">${escapedName}</div>`,
+      `      <div class="pdf-reader-placeholder-subtitle">${sizeMb} MB · 正在准备原生阅读器...</div>`,
+      `    </div>`,
+      `  </div>`,
+      `</div>`
+    ].join('\n');
+  }
+
+  async function hydratePdfReaders(container) {
+    upgradeLegacyPdfContainers(container);
+    const readers = container.querySelectorAll('.pdf-native-reader[data-pdf-path]:not([data-pdf-ready])');
+    readers.forEach(reader => {
+      reader.dataset.pdfReady = '1';
+      initPdfReader(reader);
+    });
+  }
+
+  function upgradeLegacyPdfContainers(container) {
+    const legacyFrames = container.querySelectorAll('.pdf-container iframe[src*="/screenshot?path="]');
+    legacyFrames.forEach(frame => {
+      const wrapper = frame.closest('.pdf-container');
+      if (!wrapper || wrapper.dataset.pdfUpgraded) return;
+
+      try {
+        const src = frame.getAttribute('src');
+        const url = new URL(src, `http://localhost:30032`);
+        const pdfPath = url.searchParams.get('path');
+        if (!pdfPath || path.extname(pdfPath).toLowerCase() !== '.pdf') return;
+
+        const reader = document.createElement('div');
+        reader.className = 'pdf-native-reader';
+        reader.dataset.pdfPath = pdfPath;
+        reader.dataset.pdfTitle = path.basename(pdfPath);
+        wrapper.replaceWith(reader);
+      } catch (err) {
+        console.warn('Legacy PDF iframe upgrade failed:', err);
+        wrapper.dataset.pdfUpgraded = 'failed';
+      }
+    });
+  }
+
+  async function initPdfReader(reader) {
+    const pdfPath = reader.dataset.pdfPath;
+    const pdfTitle = reader.dataset.pdfTitle || path.basename(pdfPath || 'PDF 资料');
+    const state = {
+      pdfPath,
+      title: pdfTitle,
+      pageCount: 0,
+      currentPage: 1,
+      zoom: 1,
+      manualZoom: false,
+      pageMode: 'double',
+      renderScale: 2,
+      renderToken: 0,
+      basePageWidth: 430,
+      pageAspectRatio: 1.294
+    };
+
+    reader.innerHTML = `
+      <div class="pdf-reader-toolbar">
+        <div class="pdf-reader-title-group">
+          <div class="pdf-reader-badge">PDF</div>
+          <div>
+            <div class="pdf-reader-title">${escapeHtmlText(pdfTitle)}</div>
+            <div class="pdf-reader-subtitle" data-role="pdf-status">正在读取 PDF...</div>
+          </div>
+        </div>
+        <div class="pdf-reader-controls">
+          <button type="button" data-action="back-list" title="返回笔记列表">返回</button>
+          <span class="pdf-reader-divider"></span>
+          <button type="button" data-action="prev" title="上一组页面">上一页</button>
+          <div class="pdf-reader-page-jump">
+            <input type="number" min="1" value="1" data-role="page-input">
+            <span>/</span>
+            <span data-role="page-count">--</span>
+          </div>
+          <button type="button" data-action="next" title="下一组页面">下一页</button>
+          <span class="pdf-reader-divider"></span>
+          <button type="button" data-action="zoom-out" title="缩小">-</button>
+          <span data-role="zoom-label">100%</span>
+          <button type="button" data-action="zoom-in" title="放大">+</button>
+          <span class="pdf-reader-divider"></span>
+          <button type="button" data-action="open-file" title="使用系统默认应用打开">系统打开</button>
+          <button type="button" data-action="toggle-page-mode" title="切换单页/双页展示">双页</button>
+        </div>
+      </div>
+      <div class="pdf-reader-spread" data-role="spread">
+        <div class="pdf-page-slot" data-role="left-page">
+          <div class="pdf-page-loading">正在载入...</div>
+        </div>
+        <div class="pdf-page-slot" data-role="right-page">
+          <div class="pdf-page-loading">正在载入...</div>
+        </div>
+      </div>
+    `;
+
+    const statusEl = reader.querySelector('[data-role="pdf-status"]');
+    const pageInput = reader.querySelector('[data-role="page-input"]');
+    const pageCountEl = reader.querySelector('[data-role="page-count"]');
+    const zoomLabel = reader.querySelector('[data-role="zoom-label"]');
+    const spreadEl = reader.querySelector('[data-role="spread"]');
+
+    const syncControls = () => {
+      const step = state.pageMode === 'double' ? 2 : 1;
+      pageInput.value = state.currentPage;
+      pageInput.max = state.pageCount || 1;
+      pageCountEl.textContent = state.pageCount || '--';
+      zoomLabel.textContent = `${Math.round(state.zoom * 100)}%`;
+      reader.style.setProperty('--pdf-page-zoom', state.zoom);
+      reader.classList.toggle('single-page-mode', state.pageMode === 'single');
+      const prevBtn = reader.querySelector('[data-action="prev"]');
+      const nextBtn = reader.querySelector('[data-action="next"]');
+      const modeBtn = reader.querySelector('[data-action="toggle-page-mode"]');
+      if (prevBtn) prevBtn.disabled = state.currentPage <= 1;
+      if (nextBtn) nextBtn.disabled = !state.pageCount || state.currentPage + step > state.pageCount;
+      if (modeBtn) {
+        modeBtn.textContent = state.pageMode === 'double' ? '双页' : '单页';
+        modeBtn.title = state.pageMode === 'double' ? '当前双页展示，点击切换为单页' : '当前单页展示，点击切换为双页';
+      }
+    };
+
+    const parseCssPx = (value) => {
+      const parsed = parseFloat(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+
+    const applyAutoFit = () => {
+      if (state.manualZoom || !spreadEl) {
+        syncControls();
+        return;
+      }
+
+      const pageSlots = state.pageMode === 'double' ? 2 : 1;
+      const spreadStyle = window.getComputedStyle(spreadEl);
+      const paddingX = parseCssPx(spreadStyle.paddingLeft) + parseCssPx(spreadStyle.paddingRight);
+      const paddingY = parseCssPx(spreadStyle.paddingTop) + parseCssPx(spreadStyle.paddingBottom);
+      const gap = state.pageMode === 'double' ? parseCssPx(spreadStyle.columnGap || spreadStyle.gap || '0') : 0;
+      const pageNumberReserve = 26;
+      const availableWidth = Math.max(180, spreadEl.clientWidth - paddingX - gap);
+      const availableHeight = Math.max(220, spreadEl.clientHeight - paddingY - pageNumberReserve);
+      const widthZoom = availableWidth / (state.basePageWidth * pageSlots);
+      const heightZoom = availableHeight / (state.basePageWidth * state.pageAspectRatio);
+      state.zoom = Math.min(2.4, Math.max(0.45, Math.min(widthZoom, heightZoom)));
+      syncControls();
+    };
+    state.applyAutoFit = applyAutoFit;
+
+    const goToPage = (page) => {
+      if (!state.pageCount) return;
+      state.currentPage = Math.min(state.pageCount, Math.max(1, parseInt(page, 10) || 1));
+      renderPdfSpread(reader, state, statusEl, syncControls, applyAutoFit);
+    };
+
+    reader.querySelector('[data-action="back-list"]').addEventListener('click', () => {
+      closeEditor();
+      loadAndRenderNotes();
+    });
+    reader.querySelector('[data-action="prev"]').addEventListener('click', () => {
+      const step = state.pageMode === 'double' ? 2 : 1;
+      goToPage(state.currentPage - step);
+    });
+    reader.querySelector('[data-action="next"]').addEventListener('click', () => {
+      const step = state.pageMode === 'double' ? 2 : 1;
+      goToPage(state.currentPage + step);
+    });
+    reader.querySelector('[data-action="zoom-out"]').addEventListener('click', () => {
+      state.manualZoom = true;
+      state.zoom = Math.max(0.7, Math.round((state.zoom - 0.1) * 10) / 10);
+      syncControls();
+    });
+    reader.querySelector('[data-action="zoom-in"]').addEventListener('click', () => {
+      state.manualZoom = true;
+      state.zoom = Math.min(1.8, Math.round((state.zoom + 0.1) * 10) / 10);
+      syncControls();
+    });
+    reader.querySelector('[data-action="open-file"]').addEventListener('click', () => {
+      ipcRenderer.invoke('open-path', state.pdfPath);
+    });
+    reader.querySelector('[data-action="toggle-page-mode"]').addEventListener('click', () => {
+      state.pageMode = state.pageMode === 'double' ? 'single' : 'double';
+      if (!state.manualZoom) {
+        applyAutoFit();
+      } else {
+        syncControls();
+      }
+      renderPdfSpread(reader, state, statusEl, syncControls, applyAutoFit);
+    });
+    pageInput.addEventListener('change', () => goToPage(pageInput.value));
+    pageInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        goToPage(pageInput.value);
+      }
+    });
+
+    try {
+      const info = await ipcRenderer.invoke('pdf-get-info', state.pdfPath);
+      if (!info || !info.success) {
+        throw new Error(info?.error || 'PDF 信息读取失败');
+      }
+      state.pageCount = info.pageCount || 0;
+      if (statusEl) statusEl.textContent = `${state.pageCount} 页 · 双页阅读`;
+      applyAutoFit();
+      if (typeof ResizeObserver !== 'undefined') {
+        const resizeObserver = new ResizeObserver(() => {
+          if (!state.manualZoom) applyAutoFit();
+        });
+        resizeObserver.observe(spreadEl);
+      }
+      await renderPdfSpread(reader, state, statusEl, syncControls, applyAutoFit);
+    } catch (err) {
+      console.error('PDF reader init failed:', err);
+      if (statusEl) statusEl.textContent = `PDF 打开失败：${err.message}`;
+      reader.querySelector('[data-role="spread"]').innerHTML = `<div class="pdf-reader-error">PDF 打开失败：${escapeHtmlText(err.message)}</div>`;
+    }
+  }
+
+  async function renderPdfSpread(reader, state, statusEl, syncControls, applyAutoFit) {
+    const token = ++state.renderToken;
+    const leftSlot = reader.querySelector('[data-role="left-page"]');
+    const rightSlot = reader.querySelector('[data-role="right-page"]');
+    const pages = [
+      state.currentPage,
+      state.pageMode === 'double' && state.currentPage + 1 <= state.pageCount ? state.currentPage + 1 : null
+    ];
+
+    reader.classList.remove('is-flipping');
+    // Force reflow so repeated page turns replay the flip animation.
+    reader.offsetWidth;
+    reader.classList.add('is-flipping');
+
+    syncControls();
+    if (statusEl) {
+      const modeText = state.pageMode === 'double' ? '双页阅读' : '单页阅读';
+      statusEl.textContent = pages[1]
+        ? `${pages[0]}-${pages[1]} / ${state.pageCount} 页 · ${modeText}`
+        : `${pages[0]} / ${state.pageCount} 页 · ${modeText}`;
+    }
+
+    await Promise.all([
+      renderPdfPageIntoSlot(leftSlot, state, pages[0], token, reader),
+      renderPdfPageIntoSlot(rightSlot, state, pages[1], token, reader)
+    ]);
+
+    if (token === state.renderToken && !state.manualZoom && typeof applyAutoFit === 'function') {
+      applyAutoFit();
+    }
+
+    setTimeout(() => reader.classList.remove('is-flipping'), 280);
+  }
+
+  async function renderPdfPageIntoSlot(slot, state, pageNumber, token, reader) {
+    if (!slot) return;
+
+    if (!pageNumber) {
+      slot.classList.add('empty');
+      slot.innerHTML = `<div class="pdf-page-empty">本书已到末页</div>`;
+      return;
+    }
+
+    slot.classList.remove('empty');
+    slot.innerHTML = `<div class="pdf-page-loading">正在渲染第 ${pageNumber} 页...</div>`;
+
+    let result = null;
+    try {
+      result = await ipcRenderer.invoke('pdf-render-page', {
+        pdfPath: state.pdfPath,
+        pageIndex: pageNumber - 1,
+        scale: state.renderScale
+      });
+    } catch (err) {
+      result = { success: false, error: err.message };
+    }
+
+    if (token !== state.renderToken) return;
+
+    if (!result || !result.success) {
+      slot.innerHTML = `<div class="pdf-page-error">第 ${pageNumber} 页渲染失败：${escapeHtmlText(result?.error || '未知错误')}</div>`;
+      return;
+    }
+
+    const imageUrl = `http://localhost:30032/screenshot?path=${encodeURIComponent(result.absolutePath)}`;
+    slot.innerHTML = `
+      <img src="${imageUrl}" alt="PDF 第 ${pageNumber} 页">
+      <div class="pdf-page-number">第 ${pageNumber} 页</div>
+    `;
+
+    const img = slot.querySelector('img');
+    if (img) {
+      img.addEventListener('load', () => {
+        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+          state.pageAspectRatio = img.naturalHeight / img.naturalWidth;
+          if (!state.manualZoom && typeof state.applyAutoFit === 'function') {
+            state.applyAutoFit();
+          }
+        }
+      }, { once: true });
+    }
+  }
+
   // Upload Material button
   if (btnUploadMaterial) {
     btnUploadMaterial.addEventListener('click', async () => {
@@ -4550,11 +4887,7 @@ function initNotesFeature() {
         if (extLower === '.md' || extLower === '.txt') {
           noteContent = material.text || '';
         } else if (extLower === '.pdf') {
-          const streamUrl = `http://localhost:30032/screenshot?path=${encodeURIComponent(material.absolutePath)}`;
-          noteContent = `### 📄 PDF 资料：${material.name}\n\n`;
-          noteContent += `<div class="pdf-container" style="width:100%; height:650px; border:1px solid var(--border-color); border-radius:8px; overflow:hidden; background:rgba(0,0,0,0.2); margin: 16px 0;">\n`;
-          noteContent += `  <iframe src="${streamUrl}" style="width:100%; height:100%; border:none;"></iframe>\n`;
-          noteContent += `</div>\n`;
+          noteContent = createPdfReaderBlock(material);
         } else if (['.png', '.jpg', '.jpeg'].includes(extLower)) {
           const streamUrl = `http://localhost:30032/screenshot?path=${encodeURIComponent(material.absolutePath)}`;
           noteContent = `\n![${material.name}](${streamUrl})\n`;
@@ -4694,6 +5027,8 @@ function initNotesFeature() {
     } else {
       notePreviewContent.textContent = html;
     }
+
+    hydratePdfReaders(notePreviewContent);
     
     // 4. Render Mermaid diagrams
     if (typeof mermaid !== 'undefined') {
@@ -4867,6 +5202,3 @@ function initNotesFeature() {
     btnConfirmInsertShot.addEventListener('click', confirmAndInsertScreenshot);
   }
 }
-
-
-

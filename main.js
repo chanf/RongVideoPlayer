@@ -2,7 +2,8 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
-const { spawn, exec } = require('child_process');
+const crypto = require('crypto');
+const { spawn, exec, execFile } = require('child_process');
 
 let mainWindow;
 let videoServer;
@@ -23,9 +24,10 @@ function resolveBinaryPath(name) {
     `/usr/local/bin/${name}`,
     `/opt/homebrew/bin/${name}`,
     `/usr/bin/${name}`,
+    process.resourcesPath ? path.join(process.resourcesPath, 'bin', name) : null,
     path.join(__dirname, 'bin', name),
     path.join(__dirname, '..', 'bin', name)
-  ];
+  ].filter(Boolean);
 
   for (const p of commonPaths) {
     if (fs.existsSync(p)) {
@@ -38,6 +40,7 @@ function resolveBinaryPath(name) {
 
 const FFMPEG_PATH = resolveBinaryPath('ffmpeg');
 const FFPROBE_PATH = resolveBinaryPath('ffprobe');
+const PDF_RENDERER_PATH = resolveBinaryPath('pdf_render_mac');
 
 function checkFFmpegExists() {
   try {
@@ -1324,6 +1327,113 @@ ipcMain.handle('upload-material', async () => {
   } catch (e) {
     console.error('Failed to upload material:', e);
     throw e;
+  }
+});
+
+// ==========================================
+// PDF 原生阅读支持 (PDFKit renderer bridge)
+// ==========================================
+const PDF_CACHE_DIR = path.join(app.getPath('userData'), 'PdfCache');
+const PDF_RENDER_CACHE_VERSION = 'v2';
+
+function runPdfRenderer(args) {
+  return new Promise((resolve, reject) => {
+    execFile(PDF_RENDERER_PATH, args, { timeout: 30000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+      let parsed = null;
+      try {
+        parsed = stdout ? JSON.parse(stdout.trim()) : null;
+      } catch (parseError) {
+        reject(new Error(`PDF 渲染器返回了无效数据: ${parseError.message}`));
+        return;
+      }
+
+      if (error) {
+        reject(new Error((parsed && parsed.error) || stderr || error.message));
+        return;
+      }
+
+      if (!parsed || parsed.success === false) {
+        reject(new Error((parsed && parsed.error) || 'PDF 渲染失败'));
+        return;
+      }
+
+      resolve(parsed);
+    });
+  });
+}
+
+function normalizePdfScale(scale) {
+  const parsed = Number(scale);
+  if (!Number.isFinite(parsed)) return 2;
+  return Math.min(3, Math.max(1, parsed));
+}
+
+function getPdfCachePath(pdfPath, pageIndex, scale) {
+  const stat = fs.statSync(pdfPath);
+  const cacheKey = crypto
+    .createHash('sha1')
+    .update(`${PDF_RENDER_CACHE_VERSION}:${pdfPath}:${stat.size}:${stat.mtimeMs}:${pageIndex}:${scale}`)
+    .digest('hex');
+  return path.join(PDF_CACHE_DIR, `${cacheKey}.png`);
+}
+
+ipcMain.handle('pdf-get-info', async (event, pdfPath) => {
+  try {
+    if (!pdfPath || !fs.existsSync(pdfPath)) {
+      throw new Error('PDF 文件不存在');
+    }
+    if (path.extname(pdfPath).toLowerCase() !== '.pdf') {
+      throw new Error('请选择 PDF 文件');
+    }
+
+    const info = await runPdfRenderer(['info', pdfPath]);
+    return {
+      success: true,
+      pageCount: info.pageCount,
+      title: info.title || path.basename(pdfPath, '.pdf')
+    };
+  } catch (err) {
+    console.error('Failed to read PDF info:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('pdf-render-page', async (event, { pdfPath, pageIndex, scale }) => {
+  try {
+    if (!pdfPath || !fs.existsSync(pdfPath)) {
+      throw new Error('PDF 文件不存在');
+    }
+    if (path.extname(pdfPath).toLowerCase() !== '.pdf') {
+      throw new Error('请选择 PDF 文件');
+    }
+
+    const normalizedPageIndex = parseInt(pageIndex, 10);
+    if (!Number.isInteger(normalizedPageIndex) || normalizedPageIndex < 0) {
+      throw new Error('PDF 页码无效');
+    }
+
+    const normalizedScale = normalizePdfScale(scale);
+    const outputPath = getPdfCachePath(pdfPath, normalizedPageIndex, normalizedScale);
+    fs.mkdirSync(PDF_CACHE_DIR, { recursive: true });
+
+    if (!fs.existsSync(outputPath)) {
+      await runPdfRenderer([
+        'render',
+        pdfPath,
+        String(normalizedPageIndex),
+        String(normalizedScale),
+        outputPath
+      ]);
+    }
+
+    return {
+      success: true,
+      pageIndex: normalizedPageIndex,
+      absolutePath: outputPath
+    };
+  } catch (err) {
+    console.error('Failed to render PDF page:', err);
+    return { success: false, error: err.message };
   }
 });
 

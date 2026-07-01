@@ -22,7 +22,8 @@
         "from": "bin",
         "to": "bin",
         "filter": [
-          "ocr_mac"
+          "ocr_mac",
+          "pdf_render_mac"
         ]
       }
     ],
