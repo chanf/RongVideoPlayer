@@ -5690,7 +5690,7 @@ function initNotesFeature() {
 
   // Setup Mermaid
   if (typeof mermaid !== 'undefined') {
-    mermaid.initialize({ startOnLoad: false, theme: 'dark' });
+    mermaid.initialize({ startOnLoad: false, theme: 'default' });
   }
 
   // Toggle View
@@ -7565,7 +7565,7 @@ function initNotesFeature() {
       
       try {
         const { svg } = await mermaid.render(diagDivId, code);
-        pre.outerHTML = `<div class="mermaid-diagram" style="text-align:center; padding:16px 0; background:rgba(0,0,0,0.1); border-radius:6px; margin: 12px 0;">${svg}</div>`;
+        pre.outerHTML = `<div class="mermaid-diagram">${svg}</div>`;
       } catch (e) {
         console.error('Mermaid render error:', e);
         const errSvg = document.getElementById(diagDivId);

@@ -4352,6 +4352,22 @@ body[data-theme="ningzhi"] .tree-cat-badge.inherited {
   font-size: 90%;
   color: var(--text-main);
 }
+.markdown-body .mermaid-diagram {
+  color-scheme: light;
+  text-align: center;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 18px;
+  margin: 16px 0;
+  overflow-x: auto;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+.markdown-body .mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+  background: #ffffff;
+}
 .markdown-body img {
   max-width: 100%;
   border-radius: 6px;
