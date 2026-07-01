@@ -4307,6 +4307,123 @@ function initNotesFeature() {
     }
   }
 
+  function extractNoteImageUrl(note) {
+    if (!note || !note.content) return null;
+
+    const markdownMatch = note.content.match(/!\[.*?\]\((.*?)\)/);
+    if (markdownMatch && markdownMatch[1]) return markdownMatch[1];
+
+    const imgMatch = note.content.match(/<img.*?src=["'](.*?)["']/);
+    if (imgMatch && imgMatch[1]) return imgMatch[1];
+
+    return null;
+  }
+
+  function extractPdfMaterialInfo(note) {
+    if (!note || !note.content) return null;
+
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = note.content;
+
+    const nativeReader = wrapper.querySelector('.pdf-native-reader[data-pdf-path]');
+    if (nativeReader) {
+      const pdfPath = nativeReader.getAttribute('data-pdf-path');
+      if (!pdfPath) return null;
+      return {
+        pdfPath,
+        title: nativeReader.getAttribute('data-pdf-title') || note.title || path.basename(pdfPath)
+      };
+    }
+
+    const legacyFrame = wrapper.querySelector('.pdf-container iframe[src*="/screenshot?path="]');
+    if (legacyFrame) {
+      try {
+        const frameUrl = new URL(legacyFrame.getAttribute('src'), 'http://localhost:30032');
+        const pdfPath = frameUrl.searchParams.get('path');
+        if (pdfPath && path.extname(pdfPath).toLowerCase() === '.pdf') {
+          return {
+            pdfPath,
+            title: note.title || path.basename(pdfPath)
+          };
+        }
+      } catch (err) {
+        console.warn('Failed to parse legacy PDF preview path:', err);
+      }
+    }
+
+    return null;
+  }
+
+  function createNoteExcerpt(note, pdfInfo) {
+    if (pdfInfo) return 'PDF 资料 · 首页缩略图预览 · 点击打开阅读器';
+    if (!note || !note.content) return '暂无内容';
+
+    return note.content
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/!\[.*?\]\(.*?\)/g, ' ')
+      .replace(/[#*`~$\-[\]()]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim() || '暂无内容';
+  }
+
+  function createNoteCardThumbnail(kind = 'image') {
+    const thumbContainer = document.createElement('div');
+    thumbContainer.className = `note-card-thumbnail ${kind === 'pdf' ? 'pdf-note-thumbnail is-loading' : 'image-note-thumbnail'}`;
+    return thumbContainer;
+  }
+
+  function renderPdfThumbnailFallback(thumbContainer, text = 'PDF') {
+    thumbContainer.classList.remove('is-loading');
+    thumbContainer.classList.add('is-fallback');
+    thumbContainer.innerHTML = `
+      <div class="pdf-note-thumb-fallback">
+        <div class="pdf-note-thumb-icon">PDF</div>
+        <div>${escapeHtmlText(text)}</div>
+      </div>
+    `;
+  }
+
+  async function hydratePdfNoteThumbnail(thumbContainer, pdfInfo) {
+    if (!thumbContainer || !pdfInfo || !pdfInfo.pdfPath) return;
+
+    thumbContainer.innerHTML = `
+      <div class="pdf-note-thumb-loading">
+        <div class="pdf-note-thumb-icon">PDF</div>
+        <div>正在生成首页预览...</div>
+      </div>
+    `;
+
+    let result = null;
+    try {
+      result = await ipcRenderer.invoke('pdf-render-page', {
+        pdfPath: pdfInfo.pdfPath,
+        pageIndex: 0,
+        scale: 1
+      });
+    } catch (err) {
+      result = { success: false, error: err.message };
+    }
+
+    if (!thumbContainer.isConnected) return;
+
+    if (!result || !result.success) {
+      renderPdfThumbnailFallback(thumbContainer, '首页预览失败');
+      return;
+    }
+
+    const imageUrl = `http://localhost:30032/screenshot?path=${encodeURIComponent(result.absolutePath)}`;
+    try {
+      const img = await preloadPdfPageImage(imageUrl, `${pdfInfo.title || 'PDF'} 首页缩略图`);
+      if (!thumbContainer.isConnected) return;
+      img.className = 'pdf-note-thumb-image';
+      thumbContainer.classList.remove('is-loading', 'is-fallback');
+      thumbContainer.replaceChildren(img);
+    } catch (err) {
+      if (!thumbContainer.isConnected) return;
+      renderPdfThumbnailFallback(thumbContainer, '首页加载失败');
+    }
+  }
+
   // Render Notes Grid
   function renderNotesGrid() {
     if (!notesGrid) return;
@@ -4350,38 +4467,19 @@ function initNotesFeature() {
     filtered.forEach(note => {
       const card = document.createElement('div');
       card.className = 'note-card';
-      
-      // Extract image URL from note content if exists
-      let imageUrl = null;
-      if (note.content) {
-        const match = note.content.match(/!\[.*?\]\((.*?)\)/);
-        if (match && match[1]) {
-          imageUrl = match[1];
-        } else {
-          const imgMatch = note.content.match(/<img.*?src=["'](.*?)["']/);
-          if (imgMatch && imgMatch[1]) {
-            imageUrl = imgMatch[1];
-          }
-        }
-      }
+      const pdfInfo = extractPdfMaterialInfo(note);
+      const imageUrl = !pdfInfo ? extractNoteImageUrl(note) : null;
+      let pdfThumbContainer = null;
 
-      if (imageUrl) {
-        const thumbContainer = document.createElement('div');
-        thumbContainer.className = 'note-card-thumbnail';
-        thumbContainer.style.cssText = 'width: 100%; height: 120px; overflow: hidden; border-radius: 6px; background: rgba(0,0,0,0.15); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; position: relative;';
-        
+      if (pdfInfo) {
+        card.classList.add('pdf-note-card');
+        pdfThumbContainer = createNoteCardThumbnail('pdf');
+        card.appendChild(pdfThumbContainer);
+      } else if (imageUrl) {
+        const thumbContainer = createNoteCardThumbnail('image');
         const img = document.createElement('img');
         img.src = imageUrl;
-        img.style.cssText = 'width: 100%; height: 100%; object-fit: cover; transition: transform 0.3s ease;';
         thumbContainer.appendChild(img);
-        
-        card.addEventListener('mouseenter', () => {
-          img.style.transform = 'scale(1.05)';
-        });
-        card.addEventListener('mouseleave', () => {
-          img.style.transform = 'scale(1)';
-        });
-        
         card.appendChild(thumbContainer);
       }
 
@@ -4392,7 +4490,7 @@ function initNotesFeature() {
       // Excerpt (strip markdown syntax briefly for preview)
       const excerpt = document.createElement('div');
       excerpt.className = 'note-card-excerpt';
-      excerpt.textContent = note.content ? note.content.replace(/[#*`~$\-[\]()]/g, '').trim() : '暂无内容';
+      excerpt.textContent = createNoteExcerpt(note, pdfInfo);
       card.appendChild(excerpt);
       
       // Meta row
@@ -4413,6 +4511,10 @@ function initNotesFeature() {
       });
       
       notesGrid.appendChild(card);
+
+      if (pdfThumbContainer) {
+        hydratePdfNoteThumbnail(pdfThumbContainer, pdfInfo);
+      }
     });
   }
 
