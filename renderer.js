@@ -1571,6 +1571,17 @@ function handleKeyboardShortcuts(e) {
     return;
   }
 
+  const activePdfReader = document.querySelector('.note-editor-view.pdf-reading-mode:not(.hidden) .pdf-native-reader[data-pdf-ready="1"]');
+  if (activePdfReader && ['ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
+    e.preventDefault();
+    const action = e.code === 'ArrowLeft' ? 'prev' : 'next';
+    const btn = activePdfReader.querySelector(`[data-action="${action}"]`);
+    if (btn && !btn.disabled) {
+      btn.click();
+    }
+    return;
+  }
+
   // Capture Option + 1 (Alt + 1) for Screenshot
   if (e.altKey && e.code === 'Digit1') {
     e.preventDefault();
@@ -4581,6 +4592,38 @@ function initNotesFeature() {
     ].join('\n');
   }
 
+  function createPdfCategoryOptions(selectedCategoryId) {
+    const categories = screenshotsDB && Array.isArray(screenshotsDB.categories)
+      ? screenshotsDB.categories
+      : [{ id: 'uncategorized', name: '未分类' }];
+    const hasUncategorized = categories.some(cat => cat.id === 'uncategorized');
+    const normalizedCategories = hasUncategorized
+      ? categories
+      : [{ id: 'uncategorized', name: '未分类' }, ...categories];
+
+    return normalizedCategories.map(cat => {
+      const selected = cat.id === (selectedCategoryId || 'uncategorized') ? ' selected' : '';
+      return `<option value="${escapeHtmlText(cat.id)}"${selected}>${escapeHtmlText(cat.name)}</option>`;
+    }).join('');
+  }
+
+  async function saveCurrentPdfNoteCategory(categoryId) {
+    if (!currentEditingNote) return;
+
+    currentEditingNote.categoryId = categoryId || 'uncategorized';
+    const existingIdx = notesDB.notes.findIndex(n => n.id === currentEditingNote.id);
+    if (existingIdx !== -1) {
+      notesDB.notes[existingIdx] = currentEditingNote;
+    }
+
+    if (noteCategorySelect) {
+      noteCategorySelect.value = currentEditingNote.categoryId;
+    }
+
+    await ipcRenderer.invoke('save-notes-db', notesDB);
+    renderSidebarFilters();
+  }
+
   async function hydratePdfReaders(container) {
     upgradeLegacyPdfContainers(container);
     const readers = container.querySelectorAll('.pdf-native-reader[data-pdf-path]:not([data-pdf-ready])');
@@ -4617,6 +4660,7 @@ function initNotesFeature() {
   async function initPdfReader(reader) {
     const pdfPath = reader.dataset.pdfPath;
     const pdfTitle = reader.dataset.pdfTitle || path.basename(pdfPath || 'PDF 资料');
+    const categoryOptions = createPdfCategoryOptions(currentEditingNote?.categoryId || 'uncategorized');
     const state = {
       pdfPath,
       title: pdfTitle,
@@ -4656,6 +4700,10 @@ function initNotesFeature() {
           <button type="button" data-action="zoom-in" title="放大">+</button>
           <span class="pdf-reader-divider"></span>
           <button type="button" data-action="open-file" title="使用系统默认应用打开">系统打开</button>
+          <label class="pdf-category-control" title="设置笔记分类">
+            <span>分类</span>
+            <select data-role="pdf-category-select">${categoryOptions}</select>
+          </label>
           <button type="button" data-action="toggle-page-mode" title="切换单页/双页展示">双页</button>
         </div>
       </div>
@@ -4674,6 +4722,7 @@ function initNotesFeature() {
     const pageCountEl = reader.querySelector('[data-role="page-count"]');
     const zoomLabel = reader.querySelector('[data-role="zoom-label"]');
     const spreadEl = reader.querySelector('[data-role="spread"]');
+    const categorySelect = reader.querySelector('[data-role="pdf-category-select"]');
 
     const syncControls = () => {
       const step = state.pageMode === 'double' ? 2 : 1;
@@ -4751,6 +4800,11 @@ function initNotesFeature() {
     reader.querySelector('[data-action="open-file"]').addEventListener('click', () => {
       ipcRenderer.invoke('open-path', state.pdfPath);
     });
+    if (categorySelect) {
+      categorySelect.addEventListener('change', async () => {
+        await saveCurrentPdfNoteCategory(categorySelect.value);
+      });
+    }
     reader.querySelector('[data-action="toggle-page-mode"]').addEventListener('click', () => {
       state.pageMode = state.pageMode === 'double' ? 'single' : 'double';
       if (!state.manualZoom) {
@@ -4792,6 +4846,7 @@ function initNotesFeature() {
 
   async function renderPdfSpread(reader, state, statusEl, syncControls, applyAutoFit) {
     const token = ++state.renderToken;
+    const isInitialRender = !state.hasRenderedSpread;
     const leftSlot = reader.querySelector('[data-role="left-page"]');
     const rightSlot = reader.querySelector('[data-role="right-page"]');
     const pages = [
@@ -4799,10 +4854,8 @@ function initNotesFeature() {
       state.pageMode === 'double' && state.currentPage + 1 <= state.pageCount ? state.currentPage + 1 : null
     ];
 
-    reader.classList.remove('is-flipping');
-    // Force reflow so repeated page turns replay the flip animation.
-    reader.offsetWidth;
-    reader.classList.add('is-flipping');
+    const previousPage = state.lastRenderedPage || state.currentPage;
+    state.turnDirection = state.currentPage >= previousPage ? 'forward' : 'backward';
 
     syncControls();
     if (statusEl) {
@@ -4817,11 +4870,45 @@ function initNotesFeature() {
       renderPdfPageIntoSlot(rightSlot, state, pages[1], token, reader)
     ]);
 
-    if (token === state.renderToken && !state.manualZoom && typeof applyAutoFit === 'function') {
+    if (token === state.renderToken && isInitialRender && !state.manualZoom && typeof applyAutoFit === 'function') {
       applyAutoFit();
     }
 
-    setTimeout(() => reader.classList.remove('is-flipping'), 280);
+    if (token === state.renderToken) {
+      state.lastRenderedPage = state.currentPage;
+      state.hasRenderedSpread = true;
+    }
+  }
+
+  function preloadPdfPageImage(src, alt) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.alt = alt;
+      img.decoding = 'async';
+      img.onload = async () => {
+        try {
+          if (typeof img.decode === 'function') await img.decode();
+        } catch (_) {
+          // Some Electron/Chromium builds reject decode() for cached images; onload is enough here.
+        }
+        resolve(img);
+      };
+      img.onerror = () => reject(new Error('页面图片加载失败'));
+      img.src = src;
+    });
+  }
+
+  function showPdfPageNotice(slot, message, type = 'info') {
+    const oldNotice = slot.querySelector('.pdf-page-notice');
+    if (oldNotice) oldNotice.remove();
+
+    const notice = document.createElement('div');
+    notice.className = `pdf-page-notice ${type}`;
+    notice.textContent = message;
+    slot.appendChild(notice);
+    setTimeout(() => {
+      if (notice.parentNode === slot) notice.remove();
+    }, 2400);
   }
 
   async function renderPdfPageIntoSlot(slot, state, pageNumber, token, reader) {
@@ -4829,12 +4916,24 @@ function initNotesFeature() {
 
     if (!pageNumber) {
       slot.classList.add('empty');
+      slot.classList.remove('is-rendering-next', 'page-turn-forward', 'page-turn-backward');
+      delete slot.dataset.pageNumber;
       slot.innerHTML = `<div class="pdf-page-empty">本书已到末页</div>`;
       return;
     }
 
+    if (slot.dataset.pageNumber === String(pageNumber) && slot.querySelector('img')) {
+      slot.classList.remove('empty', 'is-rendering-next');
+      return;
+    }
+
     slot.classList.remove('empty');
-    slot.innerHTML = `<div class="pdf-page-loading">正在渲染第 ${pageNumber} 页...</div>`;
+    const hasRenderedPage = Boolean(slot.querySelector('img'));
+    if (hasRenderedPage) {
+      slot.classList.add('is-rendering-next');
+    } else {
+      slot.innerHTML = `<div class="pdf-page-loading">正在渲染第 ${pageNumber} 页...</div>`;
+    }
 
     let result = null;
     try {
@@ -4848,28 +4947,58 @@ function initNotesFeature() {
     }
 
     if (token !== state.renderToken) return;
+    slot.classList.remove('is-rendering-next');
 
     if (!result || !result.success) {
-      slot.innerHTML = `<div class="pdf-page-error">第 ${pageNumber} 页渲染失败：${escapeHtmlText(result?.error || '未知错误')}</div>`;
+      const message = `第 ${pageNumber} 页渲染失败：${result?.error || '未知错误'}`;
+      if (hasRenderedPage) {
+        showPdfPageNotice(slot, message, 'error');
+      } else {
+        slot.innerHTML = `<div class="pdf-page-error">${escapeHtmlText(message)}</div>`;
+      }
       return;
     }
 
     const imageUrl = `http://localhost:30032/screenshot?path=${encodeURIComponent(result.absolutePath)}`;
-    slot.innerHTML = `
-      <img src="${imageUrl}" alt="PDF 第 ${pageNumber} 页">
-      <div class="pdf-page-number">第 ${pageNumber} 页</div>
-    `;
+    let img = null;
+    try {
+      img = await preloadPdfPageImage(imageUrl, `PDF 第 ${pageNumber} 页`);
+    } catch (err) {
+      if (token !== state.renderToken) return;
+      const message = `第 ${pageNumber} 页加载失败：${err.message}`;
+      if (hasRenderedPage) {
+        showPdfPageNotice(slot, message, 'error');
+      } else {
+        slot.innerHTML = `<div class="pdf-page-error">${escapeHtmlText(message)}</div>`;
+      }
+      return;
+    }
 
-    const img = slot.querySelector('img');
-    if (img) {
-      img.addEventListener('load', () => {
-        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-          state.pageAspectRatio = img.naturalHeight / img.naturalWidth;
-          if (!state.manualZoom && typeof state.applyAutoFit === 'function') {
-            state.applyAutoFit();
-          }
-        }
-      }, { once: true });
+    if (token !== state.renderToken) return;
+
+    if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+      state.pageAspectRatio = img.naturalHeight / img.naturalWidth;
+    }
+
+    const pageContent = document.createElement('div');
+    pageContent.className = 'pdf-page-content';
+    const pageNumberEl = document.createElement('div');
+    pageNumberEl.className = 'pdf-page-number';
+    pageNumberEl.textContent = `第 ${pageNumber} 页`;
+
+    pageContent.appendChild(img);
+    pageContent.appendChild(pageNumberEl);
+
+    const turnClass = state.turnDirection === 'backward' ? 'page-turn-backward' : 'page-turn-forward';
+    slot.classList.remove('page-turn-forward', 'page-turn-backward');
+    if (hasRenderedPage) slot.classList.add(turnClass);
+    slot.dataset.pageNumber = String(pageNumber);
+    slot.replaceChildren(pageContent);
+
+    if (hasRenderedPage) {
+      setTimeout(() => {
+        slot.classList.remove('page-turn-forward', 'page-turn-backward');
+      }, 320);
     }
   }
 

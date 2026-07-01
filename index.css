@@ -3579,7 +3579,7 @@ body[data-theme="ningzhi"] .tree-cat-badge.inherited {
 }
 
 .note-editor-view.pdf-reading-mode .pdf-reader-toolbar {
-  padding: 8px 12px;
+  padding: 8px 12px 8px 56px;
   flex-shrink: 0;
 }
 
@@ -3607,6 +3607,33 @@ body[data-theme="ningzhi"] .tree-cat-badge.inherited {
 .pdf-reader-controls button:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+.pdf-category-control {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.pdf-category-control select {
+  max-width: 120px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  color: var(--text-main);
+  outline: none;
+  font-size: 12px;
+}
+
+.pdf-category-control select option {
+  color: #111827;
 }
 
 .pdf-reader-page-jump {
@@ -3659,12 +3686,37 @@ body[data-theme="ningzhi"] .tree-cat-badge.inherited {
 }
 
 .pdf-page-slot {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
   min-width: 260px;
   color: var(--text-muted);
+}
+
+.pdf-page-content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  isolation: isolate;
+  will-change: opacity, filter;
+}
+
+.pdf-page-content::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 24px;
+  z-index: 1;
+  border-radius: 7px;
+  background: linear-gradient(105deg, transparent 28%, rgba(255, 255, 255, 0.22) 48%, transparent 68%);
+  opacity: 0;
+  pointer-events: none;
 }
 
 .pdf-native-reader.single-page-mode .pdf-page-slot[data-role="right-page"] {
@@ -3685,8 +3737,60 @@ body[data-theme="ningzhi"] .tree-cat-badge.inherited {
   width: calc(430px * var(--pdf-page-zoom));
 }
 
-.pdf-native-reader.is-flipping .pdf-page-slot img {
-  animation: pdf-page-flip 0.28s ease both;
+.pdf-page-slot.is-rendering-next::after {
+  content: "准备下一页...";
+  position: absolute;
+  right: 12px;
+  bottom: 34px;
+  z-index: 2;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(5, 7, 13, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+
+.pdf-page-notice {
+  position: absolute;
+  left: 50%;
+  bottom: 34px;
+  z-index: 3;
+  max-width: min(360px, 80%);
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: rgba(5, 7, 13, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 12px;
+  text-align: center;
+  transform: translateX(-50%);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+}
+
+.pdf-page-notice.error {
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.4);
+  background: rgba(127, 29, 29, 0.78);
+}
+
+.pdf-page-slot.page-turn-forward .pdf-page-content {
+  animation: pdf-page-stable-in 0.2s ease-out both;
+}
+
+.pdf-page-slot.page-turn-forward .pdf-page-content::after {
+  animation: pdf-page-sweep-forward 0.34s ease-out both;
+}
+
+.pdf-page-slot.page-turn-backward .pdf-page-content {
+  animation: pdf-page-stable-in 0.2s ease-out both;
+}
+
+.pdf-page-slot.page-turn-backward .pdf-page-content::after {
+  animation: pdf-page-sweep-backward 0.34s ease-out both;
 }
 
 .pdf-page-number {
@@ -3718,14 +3822,42 @@ body[data-theme="ningzhi"] .tree-cat-badge.inherited {
   background: rgba(127, 29, 29, 0.16);
 }
 
-@keyframes pdf-page-flip {
+@keyframes pdf-page-stable-in {
   from {
-    opacity: 0.35;
-    transform: rotateY(-7deg) translateX(12px);
+    opacity: 0.985;
+    filter: brightness(0.985);
   }
   to {
     opacity: 1;
-    transform: rotateY(0) translateX(0);
+    filter: brightness(1);
+  }
+}
+
+@keyframes pdf-page-sweep-forward {
+  from {
+    opacity: 0;
+    transform: translateX(-18%);
+  }
+  42% {
+    opacity: 0.5;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(18%);
+  }
+}
+
+@keyframes pdf-page-sweep-backward {
+  from {
+    opacity: 0;
+    transform: translateX(18%);
+  }
+  42% {
+    opacity: 0.5;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-18%);
   }
 }
 
@@ -3904,7 +4036,4 @@ body[data-theme="ningzhi"] .floating-sidebar-toggle {
   background: #eae9e2;
   box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
-
-
-
 
