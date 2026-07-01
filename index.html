@@ -10,6 +10,13 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+  <script>
+    // Apply platform class before body renders — avoids FOUC of the macOS titlebar on Windows.
+    // nodeIntegration:true is on, so process.platform is available here.
+    if (typeof process !== 'undefined' && process.platform === 'win32') {
+      document.documentElement.classList.add('platform-win');
+    }
+  </script>
 </head>
 <body>
   <!-- Custom titlebar for macOS window drag -->
@@ -492,7 +499,7 @@
               <div class="settings-tips">
                 <p>• 自动智能质量降级，若无高分辨率权限会自动降级下载最高可用分辨率。</p>
                 <p>• 音视频流独立高速下载后自动调用本地 FFmpeg 封装混流，极速无损生成 MP4。</p>
-                <p>• macOS 专享：自动注入 HVC1 (HEVC) 标志，确保 QuickTime 与 Finder 直接预览播放。</p>
+                <p class="mac-only-tip">• macOS 专享：自动注入 HVC1 (HEVC) 标志，确保 QuickTime 与 Finder 直接预览播放。</p>
               </div>
             </div>
           </div>
@@ -1021,7 +1028,7 @@
               </svg>
             </div>
             <h4 style="font-size: 18px; margin: 0 0 6px 0; color: var(--text-main);">Rong VideoPlayer</h4>
-            <p style="font-size: 12px; color: var(--text-muted); margin: 0 0 16px 0;">Version 1.0.0 (macOS Native Style)</p>
+            <p id="about-version-subtitle" style="font-size: 12px; color: var(--text-muted); margin: 0 0 16px 0;">Version 1.0.0</p>
             <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6; max-width: 400px; margin: 0 auto;">
               一款基于 Electron、HTML5 和 FFmpeg 打造的桌面视频播放器。支持智能实时转码流媒体播放与 Bilibili 视频下载。
             </p>

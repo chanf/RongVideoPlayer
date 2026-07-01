@@ -129,6 +129,19 @@ const screenshotsView = document.getElementById('screenshots-view');
 
 // Initialization
 window.addEventListener('DOMContentLoaded', async () => {
+  // Reflect the host platform in the About modal subtitle. Cheap and runs once.
+  try {
+    const subtitle = document.getElementById('about-version-subtitle');
+    if (subtitle) {
+      const style = process.platform === 'win32' ? 'Windows Native Style'
+                  : process.platform === 'darwin' ? 'macOS Native Style'
+                  : process.platform;
+      subtitle.textContent = `Version 1.0.0 (${style})`;
+    }
+  } catch (e) {
+    console.error('Error setting about subtitle:', e);
+  }
+
   try {
     setupEventListeners();
   } catch (e) {

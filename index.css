@@ -4683,3 +4683,22 @@ body[data-theme="ningzhi"] .floating-sidebar-toggle {
   background: #eae9e2;
   box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
+
+/* ============================================================
+   Windows platform overrides
+   On Windows the app uses the native titlebar (see main.js
+   createWindow), so the macOS drag-strip .mac-titlebar is hidden
+   and .app-container reclaims the full viewport.
+   ============================================================ */
+html.platform-win .mac-titlebar {
+  display: none;
+}
+
+html.platform-win .app-container {
+  height: 100vh;
+}
+
+/* macOS-only marketing line about HVC1/QuickTime/Finder — meaningless on Windows */
+html.platform-win .mac-only-tip {
+  display: none;
+}

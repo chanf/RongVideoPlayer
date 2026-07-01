@@ -7,34 +7,55 @@
   "scripts": {
     "start": "electron .",
     "pack": "electron-builder --dir",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac dmg",
+    "dist:win": "electron-builder --win portable"
   },
-  "dependencies": {},
   "devDependencies": {
-    "electron": "^33.0.2",
+    "electron": "^33.4.11",
     "electron-builder": "^24.13.3"
   },
   "build": {
     "appId": "com.rong.videoplayer",
     "productName": "Rong VideoPlayer",
-    "extraResources": [
-      {
-        "from": "bin",
-        "to": "bin",
-        "filter": [
-          "ocr_mac",
-          "pdf_render_mac"
-        ]
-      }
-    ],
+    "directories": {
+      "output": "dist"
+    },
     "mac": {
       "category": "public.app-category.video",
       "target": [
         "dmg"
+      ],
+      "extraResources": [
+        {
+          "from": "bin/ocr_mac",
+          "to": "bin/ocr_mac"
+        },
+        {
+          "from": "bin/pdf_render_mac",
+          "to": "bin/pdf_render_mac"
+        }
       ]
     },
-    "directories": {
-      "output": "dist"
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "extraResources": [
+        {
+          "from": "bin/pdf_win.exe",
+          "to": "bin/pdf_win.exe"
+        },
+        {
+          "from": "bin/pdfium.dll",
+          "to": "bin/pdfium.dll"
+        }
+      ]
     }
   }
 }
