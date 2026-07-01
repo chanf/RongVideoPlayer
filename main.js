@@ -1459,6 +1459,58 @@ function copyDirectoryIfExists(fromDir, toDir) {
   fs.cpSync(fromDir, toDir, { recursive: true, force: false, errorOnExist: false });
 }
 
+function countFilesInDirectory(dirPath) {
+  if (!fs.existsSync(dirPath)) return 0;
+
+  try {
+    return fs.readdirSync(dirPath, { withFileTypes: true }).reduce((count, entry) => {
+      const entryPath = path.join(dirPath, entry.name);
+      if (entry.isDirectory()) {
+        return count + countFilesInDirectory(entryPath);
+      }
+      return count + (entry.isFile() ? 1 : 0);
+    }, 0);
+  } catch (err) {
+    console.error('Failed to count notes library files:', err);
+    return 0;
+  }
+}
+
+function getNotesLibrarySummary(libraryDir) {
+  const notesDbPath = path.join(libraryDir, NOTES_DB_FILENAME);
+  const materialsDir = path.join(libraryDir, MATERIALS_DIR_NAME);
+  const db = readNotesDBFromFile(notesDbPath);
+  const materialCount = countFilesInDirectory(materialsDir);
+
+  return {
+    exists: fs.existsSync(libraryDir),
+    hasNotesDb: fs.existsSync(notesDbPath),
+    hasMaterials: materialCount > 0,
+    noteCount: Array.isArray(db.notes) ? db.notes.length : 0,
+    materialCount
+  };
+}
+
+function normalizeICloudMaterialPathsInNotesDB(db, targetMaterialsDir) {
+  if (!db || !Array.isArray(db.notes) || !targetMaterialsDir) {
+    return db || { notes: [] };
+  }
+
+  const plainICloudMaterialsPattern = /\/Users\/.*?\/Library\/Mobile Documents\/com~apple~CloudDocs\/Rong VideoPlayer\/NotesLibrary\/UploadedMaterials/g;
+  const encodedICloudMaterialsPattern = /%2FUsers%2F.*?%2FLibrary%2FMobile%20Documents%2Fcom~apple~CloudDocs%2FRong%20VideoPlayer%2FNotesLibrary%2FUploadedMaterials/gi;
+  const encodedTargetMaterialsDir = encodeURIComponent(targetMaterialsDir);
+
+  db.notes = db.notes.map(note => {
+    if (!note || typeof note.content !== 'string') return note;
+    let content = note.content;
+    content = content.replace(plainICloudMaterialsPattern, () => targetMaterialsDir);
+    content = content.replace(encodedICloudMaterialsPattern, () => encodedTargetMaterialsDir);
+    return { ...note, content };
+  });
+
+  return db;
+}
+
 function writeNotesDBToDir(libraryDir, db) {
   fs.mkdirSync(libraryDir, { recursive: true });
   fs.writeFileSync(path.join(libraryDir, NOTES_DB_FILENAME), JSON.stringify(db || { notes: [] }, null, 2), 'utf8');
@@ -1476,13 +1528,26 @@ function migrateNotesLibrary(targetMode) {
   const targetDir = targetMode === 'icloud' ? getICloudNotesLibraryDir() : getLocalNotesLibraryDir();
   const sourceMaterialsDir = path.join(sourceDir, MATERIALS_DIR_NAME);
   const targetMaterialsDir = path.join(targetDir, MATERIALS_DIR_NAME);
+  const sourceSummaryBefore = getNotesLibrarySummary(sourceDir);
+  const targetSummaryBefore = getNotesLibrarySummary(targetDir);
   const settings = getAppSettings();
 
   if (sourceDir === targetDir) {
     settings.notesUseIcloud = targetMode === 'icloud';
     settings.notesLibraryUpdatedAt = Date.now();
     saveAppSettings(settings);
-    return getNotesStorageStatus();
+    return getNotesStorageStatus({
+      migration: {
+        targetMode,
+        sourceDir,
+        targetDir,
+        sourceSummaryBefore,
+        targetSummaryBefore,
+        targetHadExistingLibrary: targetSummaryBefore.hasNotesDb || targetSummaryBefore.hasMaterials,
+        mergedNoteCount: targetSummaryBefore.noteCount,
+        skipped: true
+      }
+    });
   }
 
   fs.mkdirSync(targetDir, { recursive: true });
@@ -1493,7 +1558,10 @@ function migrateNotesLibrary(targetMode) {
   copyDirectoryIfExists(sourceMaterialsDir, targetMaterialsDir);
 
   const sourceDb = readNotesDBFromFile(path.join(sourceDir, NOTES_DB_FILENAME));
-  const targetDb = readNotesDBFromFile(path.join(targetDir, NOTES_DB_FILENAME));
+  let targetDb = readNotesDBFromFile(path.join(targetDir, NOTES_DB_FILENAME));
+  if (targetMode === 'icloud') {
+    targetDb = normalizeICloudMaterialPathsInNotesDB(targetDb, targetMaterialsDir);
+  }
   const rewrittenSourceDb = rewriteMaterialPathsInNotesDB(sourceDb, sourceMaterialsDir, targetMaterialsDir);
   const mergedDb = mergeNotesDB(targetDb, rewrittenSourceDb);
   writeNotesDBToDir(targetDir, mergedDb);
@@ -1502,10 +1570,24 @@ function migrateNotesLibrary(targetMode) {
   settings.notesLibraryUpdatedAt = Date.now();
   saveAppSettings(settings);
 
-  return getNotesStorageStatus();
+  return getNotesStorageStatus({
+    migration: {
+      targetMode,
+      sourceDir,
+      targetDir,
+      sourceSummaryBefore,
+      targetSummaryBefore,
+      targetHadExistingLibrary: targetSummaryBefore.hasNotesDb || targetSummaryBefore.hasMaterials,
+      sourceNoteCount: sourceSummaryBefore.noteCount,
+      targetExistingNoteCount: targetSummaryBefore.noteCount,
+      targetExistingMaterialCount: targetSummaryBefore.materialCount,
+      mergedNoteCount: Array.isArray(mergedDb.notes) ? mergedDb.notes.length : 0,
+      skipped: false
+    }
+  });
 }
 
-function getNotesStorageStatus() {
+function getNotesStorageStatus(extra = {}) {
   const settings = getAppSettings();
   const iCloudAvailable = isICloudDriveAvailable();
   const activeDir = getActiveNotesLibraryDir();
@@ -1520,7 +1602,8 @@ function getNotesStorageStatus() {
     localDir: getLocalNotesLibraryDir(),
     iCloudDir: getICloudNotesLibraryDir(),
     notesDbPath: path.join(activeDir, NOTES_DB_FILENAME),
-    materialsDir: path.join(activeDir, MATERIALS_DIR_NAME)
+    materialsDir: path.join(activeDir, MATERIALS_DIR_NAME),
+    ...extra
   };
 }
 

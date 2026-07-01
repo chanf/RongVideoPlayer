@@ -1135,6 +1135,7 @@
             <!-- Middle: Categories -->
             <div class="editor-meta-info" style="display: flex; gap: 8px; align-items: center; flex-shrink: 0;">
               <select id="note-category-select" class="dropdown-select" style="min-width: 100px; padding: 4px 8px; font-size: 12px;"></select>
+              <span id="note-autosave-status" class="note-autosave-status hidden" data-state="idle">已保存</span>
             </div>
 
             <!-- Right: Actions -->
@@ -1156,6 +1157,17 @@
               <button id="btn-delete-note" class="btn-secondary" style="padding: 6px 12px; font-size: 12px; color: #ef4444; border-color: rgba(239,68,68,0.2); border-radius: 6px; cursor: pointer;">
                 删除
               </button>
+            </div>
+          </div>
+
+          <div id="note-draft-recovery-bar" class="note-draft-recovery-bar hidden">
+            <div class="note-draft-recovery-copy">
+              <strong>发现未保存草稿</strong>
+              <span id="note-draft-recovery-detail">本地有一份更新的编辑内容。</span>
+            </div>
+            <div class="note-draft-recovery-actions">
+              <button id="btn-restore-note-draft" class="btn-primary" type="button">恢复草稿</button>
+              <button id="btn-discard-note-draft" class="btn-secondary" type="button">丢弃</button>
             </div>
           </div>
 

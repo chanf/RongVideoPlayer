@@ -5251,6 +5251,26 @@ function initSettings() {
     return status;
   }
 
+  function buildNotesStorageSwitchTip(enabled, result) {
+    const migration = result?.migration || {};
+    const targetName = enabled ? 'iCloud' : '本地';
+
+    if (migration.targetHadExistingLibrary) {
+      const details = [];
+      const noteCount = Number(migration.targetExistingNoteCount || migration.targetSummaryBefore?.noteCount || 0);
+      const materialCount = Number(migration.targetExistingMaterialCount || migration.targetSummaryBefore?.materialCount || 0);
+      if (noteCount > 0) details.push(`${noteCount} 条原有笔记`);
+      if (materialCount > 0) details.push(`${materialCount} 个原有资料`);
+
+      if (details.length > 0) {
+        return `已切换到${targetName}笔记库，并加载合并 ${details.join('、')}`;
+      }
+      return `已切换到${targetName}笔记库，并加载原有资料库`;
+    }
+
+    return enabled ? '笔记库已迁移到 iCloud' : '笔记库已迁移到本地';
+  }
+
   // Render categories inside settings panel
   function renderSettingsCategories() {
     if (!setCategoriesList) return;
@@ -5337,7 +5357,7 @@ function initSettings() {
     setNotesIcloud.addEventListener('change', async () => {
       const enabled = setNotesIcloud.checked;
       setNotesIcloud.disabled = true;
-      showLoading(enabled ? '正在迁移笔记库到 iCloud...' : '正在迁移笔记库到本地...');
+      showLoading(enabled ? '正在加载并合并 iCloud 笔记库...' : '正在加载并合并本地笔记库...');
 
       try {
         const result = await ipcRenderer.invoke('set-notes-icloud-enabled', enabled);
@@ -5346,7 +5366,7 @@ function initSettings() {
         }
         await refreshNotesStorageStatus();
         notesDB = await ipcRenderer.invoke('get-notes-db');
-        showBottomTip(enabled ? '笔记库已迁移到 iCloud' : '笔记库已迁移到本地', 'success');
+        showBottomTip(buildNotesStorageSwitchTip(enabled, result), 'success');
       } catch (err) {
         console.error('Failed to switch notes iCloud setting:', err);
         showBottomTip(err.message || '笔记库迁移失败', 'error');
@@ -5525,6 +5545,8 @@ let notesDB = { notes: [] };
 let currentEditingNote = null;
 let selectedNoteCategory = 'all';
 let notesSearchQuery = '';
+const NOTE_AUTOSAVE_DELAY_MS = 1200;
+const NOTE_DRAFTS_STORAGE_KEY = 'rong_notes_editor_drafts_v1';
 
 // Initialize notes
 function initNotesFeature() {
@@ -5565,11 +5587,23 @@ function initNotesFeature() {
   const noteTitleDisplay = document.getElementById('note-title-display');
   const noteContentInput = document.getElementById('note-content-input');
   const notePreviewContent = document.getElementById('note-preview-content');
+  const noteAutoSaveStatus = document.getElementById('note-autosave-status');
+  const noteDraftRecoveryBar = document.getElementById('note-draft-recovery-bar');
+  const noteDraftRecoveryDetail = document.getElementById('note-draft-recovery-detail');
+  const btnRestoreNoteDraft = document.getElementById('btn-restore-note-draft');
+  const btnDiscardNoteDraft = document.getElementById('btn-discard-note-draft');
   const editorLeftPane = document.getElementById('editor-left-pane');
   const markdownPreviewHeader = document.getElementById('markdown-preview-header');
   const editorActions = document.querySelector('.editor-actions');
   let materialCategoryControl = null;
   let materialCategorySelect = null;
+  let noteAutoSaveTimer = null;
+  let noteAutoSaveInFlight = false;
+  let noteAutoSaveLastSignature = '';
+  let noteAutoSaveErrorNotified = false;
+  let currentEditorIsEditMode = false;
+  let currentNotesDraftLibraryKey = 'default';
+  let pendingRecoveryDraft = null;
 
   if (editorActions && btnDeleteNote) {
     materialCategoryControl = document.createElement('label');
@@ -5629,13 +5663,16 @@ function initNotesFeature() {
       videoElement.pause();
       
       // Close editor and load notes list
+      await flushCurrentNoteAutoSave();
       closeEditor();
       await loadAndRenderNotes();
     });
   }
 
   if (btnNotesBackToPlayer && notesView) {
-    btnNotesBackToPlayer.addEventListener('click', () => {
+    btnNotesBackToPlayer.addEventListener('click', async () => {
+      await flushCurrentNoteAutoSave();
+      closeEditor();
       btnToggleNotes.classList.remove('active');
       notesView.classList.add('hidden');
       playerContainer.classList.remove('hidden');
@@ -5646,7 +5683,9 @@ function initNotesFeature() {
   const otherToggles = [btnToggleDownloader, btnToggleCommunity, btnToggleScreenshots, btnToggleSettings];
   otherToggles.forEach(toggle => {
     if (toggle) {
-      toggle.addEventListener('click', () => {
+      toggle.addEventListener('click', async () => {
+        await flushCurrentNoteAutoSave();
+        closeEditor();
         if (btnToggleNotes) btnToggleNotes.classList.remove('active');
         if (notesView) notesView.classList.add('hidden');
       });
@@ -5659,12 +5698,416 @@ function initNotesFeature() {
     notesDB = await ipcRenderer.invoke('get-notes-db');
     // Ensure screenshots DB is loaded for category names
     screenshotsDB = await ipcRenderer.invoke('get-screenshots-db');
+    await syncNotesDraftLibraryKey();
+    await restoreOrphanNoteDrafts();
     
     // 2. Render filters sidebar
     renderSidebarFilters();
     
     // 3. Render grid list
     renderNotesGrid();
+  }
+
+  async function syncNotesDraftLibraryKey() {
+    try {
+      const status = await ipcRenderer.invoke('get-notes-storage-status');
+      currentNotesDraftLibraryKey = status?.notesDbPath || status?.activeDir || 'default';
+    } catch (err) {
+      console.warn('Failed to resolve notes draft library key:', err);
+      currentNotesDraftLibraryKey = 'default';
+    }
+  }
+
+  function getAllNoteDraftBuckets() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(NOTE_DRAFTS_STORAGE_KEY) || '{}');
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch (err) {
+      console.warn('Failed to parse note drafts:', err);
+      return {};
+    }
+  }
+
+  function getScopedNoteDrafts() {
+    const buckets = getAllNoteDraftBuckets();
+    const drafts = buckets[currentNotesDraftLibraryKey];
+    return drafts && typeof drafts === 'object' && !Array.isArray(drafts) ? drafts : {};
+  }
+
+  function setScopedNoteDrafts(scopedDrafts) {
+    const buckets = getAllNoteDraftBuckets();
+    if (scopedDrafts && Object.keys(scopedDrafts).length > 0) {
+      buckets[currentNotesDraftLibraryKey] = scopedDrafts;
+    } else {
+      delete buckets[currentNotesDraftLibraryKey];
+    }
+
+    try {
+      if (Object.keys(buckets).length > 0) {
+        localStorage.setItem(NOTE_DRAFTS_STORAGE_KEY, JSON.stringify(buckets));
+      } else {
+        localStorage.removeItem(NOTE_DRAFTS_STORAGE_KEY);
+      }
+    } catch (err) {
+      console.error('Failed to persist note drafts:', err);
+      showBottomTip('本地草稿保存失败，请检查存储空间。', 'error');
+    }
+  }
+
+  function getNoteDraft(noteId) {
+    if (!noteId) return null;
+    return getScopedNoteDrafts()[noteId] || null;
+  }
+
+  function setNoteDraft(noteId, draft) {
+    if (!noteId || !draft) return;
+    const drafts = getScopedNoteDrafts();
+    drafts[noteId] = draft;
+    setScopedNoteDrafts(drafts);
+  }
+
+  function clearNoteDraft(noteId) {
+    if (!noteId) return;
+    const drafts = getScopedNoteDrafts();
+    if (!drafts[noteId]) return;
+    delete drafts[noteId];
+    setScopedNoteDrafts(drafts);
+  }
+
+  function normalizeNoteTitle(value) {
+    return String(value || '').trim() || '无标题笔记';
+  }
+
+  function getNoteEditorSnapshot(draftUpdatedAt = Date.now()) {
+    if (!currentEditingNote) return null;
+    const titleInputValue = noteTitleInput ? noteTitleInput.value : '';
+    return {
+      noteId: currentEditingNote.id,
+      titleInputValue,
+      title: normalizeNoteTitle(titleInputValue),
+      content: noteContentInput ? noteContentInput.value : '',
+      categoryId: noteCategorySelect?.value || currentEditingNote.categoryId || 'uncategorized',
+      videoPath: currentEditingNote.videoPath || null,
+      videoName: currentEditingNote.videoName || null,
+      createdAt: currentEditingNote.createdAt || draftUpdatedAt,
+      updatedAt: currentEditingNote.updatedAt || currentEditingNote.createdAt || draftUpdatedAt,
+      draftUpdatedAt,
+      baseUpdatedAt: currentEditingNote.updatedAt || currentEditingNote.createdAt || 0
+    };
+  }
+
+  function getNoteSnapshotSignature(snapshot) {
+    if (!snapshot) return '';
+    return JSON.stringify({
+      title: normalizeNoteTitle(snapshot.titleInputValue ?? snapshot.title),
+      content: snapshot.content || '',
+      categoryId: snapshot.categoryId || 'uncategorized'
+    });
+  }
+
+  function getStoredNoteSignature(note) {
+    if (!note) return '';
+    return JSON.stringify({
+      title: normalizeNoteTitle(note.title),
+      content: note.content || '',
+      categoryId: note.categoryId || 'uncategorized'
+    });
+  }
+
+  function getCurrentEditorSignature() {
+    return getNoteSnapshotSignature(getNoteEditorSnapshot());
+  }
+
+  function isCurrentNoteAutosavable() {
+    return Boolean(currentEditingNote && !currentEditingNote.isMaterial && currentEditorIsEditMode);
+  }
+
+  function setNoteAutoSaveStatus(message, state = 'idle', visible = true) {
+    if (!noteAutoSaveStatus) return;
+    const shouldShow = Boolean(visible && currentEditingNote && !currentEditingNote.isMaterial);
+    noteAutoSaveStatus.textContent = message;
+    noteAutoSaveStatus.dataset.state = state;
+    noteAutoSaveStatus.classList.toggle('hidden', !shouldShow);
+  }
+
+  function formatDraftTime(timestamp) {
+    if (!timestamp) return '';
+    try {
+      return new Date(timestamp).toLocaleString('zh-CN', {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function writeCurrentNoteDraft() {
+    if (!currentEditingNote || currentEditingNote.isMaterial) return null;
+
+    const snapshot = getNoteEditorSnapshot(Date.now());
+    if (!snapshot) return null;
+
+    const snapshotSignature = getNoteSnapshotSignature(snapshot);
+    if (snapshotSignature === noteAutoSaveLastSignature) {
+      clearNoteDraft(snapshot.noteId);
+      return null;
+    }
+
+    const hasStoredNote = notesDB.notes.some(note => note.id === snapshot.noteId);
+    const hasInputContent = Boolean(snapshot.titleInputValue.trim() || snapshot.content.trim());
+
+    if (!hasStoredNote && !hasInputContent) {
+      clearNoteDraft(snapshot.noteId);
+      return null;
+    }
+
+    setNoteDraft(snapshot.noteId, snapshot);
+    return snapshot;
+  }
+
+  async function restoreOrphanNoteDrafts() {
+    const drafts = getScopedNoteDrafts();
+    const restoredNotes = [];
+    const draftIdsToClear = [];
+    let prunedBlankDraft = false;
+    const existingIds = new Set(notesDB.notes.map(note => note.id));
+
+    Object.entries(drafts).forEach(([noteId, draft]) => {
+      if (!draft || existingIds.has(noteId)) return;
+      const titleInput = String(draft.titleInputValue ?? draft.title ?? '');
+      const content = String(draft.content || '');
+
+      if (!titleInput.trim() && !content.trim()) {
+        draftIdsToClear.push(noteId);
+        prunedBlankDraft = true;
+        return;
+      }
+
+      restoredNotes.push({
+        id: noteId,
+        title: normalizeNoteTitle(titleInput),
+        content,
+        categoryId: draft.categoryId || 'uncategorized',
+        videoPath: draft.videoPath || null,
+        videoName: draft.videoName || null,
+        createdAt: draft.createdAt || draft.draftUpdatedAt || Date.now(),
+        updatedAt: draft.draftUpdatedAt || Date.now()
+      });
+      draftIdsToClear.push(noteId);
+    });
+
+    if (prunedBlankDraft && restoredNotes.length === 0) {
+      const scopedDrafts = getScopedNoteDrafts();
+      draftIdsToClear.forEach(noteId => delete scopedDrafts[noteId]);
+      setScopedNoteDrafts(scopedDrafts);
+    }
+
+    if (restoredNotes.length === 0) return;
+
+    notesDB.notes.push(...restoredNotes);
+    try {
+      await ipcRenderer.invoke('save-notes-db', notesDB);
+      const scopedDrafts = getScopedNoteDrafts();
+      draftIdsToClear.forEach(noteId => delete scopedDrafts[noteId]);
+      setScopedNoteDrafts(scopedDrafts);
+      showBottomTip(`已恢复 ${restoredNotes.length} 个未保存草稿`, 'success');
+    } catch (err) {
+      const restoredIds = new Set(restoredNotes.map(note => note.id));
+      notesDB.notes = notesDB.notes.filter(note => !restoredIds.has(note.id));
+      console.error('Failed to restore orphan note drafts:', err);
+      showBottomTip('草稿恢复失败，将继续保留本地草稿。', 'error');
+    }
+  }
+
+  function hideDraftRecoveryBar() {
+    pendingRecoveryDraft = null;
+    if (noteDraftRecoveryBar) noteDraftRecoveryBar.classList.add('hidden');
+  }
+
+  function showDraftRecoveryIfNeeded(note) {
+    hideDraftRecoveryBar();
+    if (!note || note.isMaterial) return;
+
+    const draft = getNoteDraft(note.id);
+    if (!draft) return;
+
+    const draftSignature = getNoteSnapshotSignature(draft);
+    const noteSignature = getStoredNoteSignature(note);
+    if (draftSignature === noteSignature) {
+      clearNoteDraft(note.id);
+      return;
+    }
+
+    pendingRecoveryDraft = draft;
+    const draftTimeText = formatDraftTime(draft.draftUpdatedAt);
+    if (noteDraftRecoveryDetail) {
+      noteDraftRecoveryDetail.textContent = draftTimeText
+        ? `本地草稿更新时间：${draftTimeText}，可恢复到编辑器继续保存。`
+        : '本地有一份更新的编辑内容，可恢复到编辑器继续保存。';
+    }
+    if (noteDraftRecoveryBar) noteDraftRecoveryBar.classList.remove('hidden');
+    setNoteAutoSaveStatus('有本地草稿', 'draft');
+  }
+
+  function applyPendingRecoveryDraft() {
+    if (!pendingRecoveryDraft || !currentEditingNote) return;
+
+    noteTitleInput.value = pendingRecoveryDraft.titleInputValue ?? pendingRecoveryDraft.title ?? '';
+    noteContentInput.value = pendingRecoveryDraft.content || '';
+    if (noteCategorySelect) {
+      noteCategorySelect.value = pendingRecoveryDraft.categoryId || 'uncategorized';
+    }
+
+    renderPreview();
+    hideDraftRecoveryBar();
+    toggleEditorMode(true);
+    setNoteAutoSaveStatus('草稿已恢复', 'pending');
+    scheduleNoteAutoSave({ immediate: true });
+    showBottomTip('已恢复本地草稿，正在自动保存。', 'success');
+  }
+
+  function discardPendingRecoveryDraft() {
+    if (!currentEditingNote) return;
+    clearNoteDraft(currentEditingNote.id);
+    hideDraftRecoveryBar();
+    setNoteAutoSaveStatus('已保存', 'saved');
+    showBottomTip('已丢弃本地草稿。');
+  }
+
+  async function persistCurrentEditableNote({ source = 'auto' } = {}) {
+    if (!currentEditingNote || currentEditingNote.isMaterial) return false;
+
+    const noteId = currentEditingNote.id;
+    const snapshot = getNoteEditorSnapshot();
+    if (!snapshot) return false;
+    const savedSignature = getNoteSnapshotSignature(snapshot);
+    const now = Date.now();
+
+    currentEditingNote.title = snapshot.title;
+    currentEditingNote.content = snapshot.content;
+    currentEditingNote.categoryId = snapshot.categoryId || 'uncategorized';
+    currentEditingNote.videoPath = snapshot.videoPath;
+    currentEditingNote.videoName = snapshot.videoName;
+    currentEditingNote.createdAt = currentEditingNote.createdAt || snapshot.createdAt || now;
+    currentEditingNote.updatedAt = now;
+
+    const existingIdx = notesDB.notes.findIndex(note => note.id === noteId);
+    if (existingIdx !== -1) {
+      notesDB.notes[existingIdx] = currentEditingNote;
+    } else {
+      notesDB.notes.push(currentEditingNote);
+    }
+
+    try {
+      await ipcRenderer.invoke('save-notes-db', notesDB);
+    } catch (err) {
+      setNoteDraft(noteId, {
+        ...snapshot,
+        draftUpdatedAt: Date.now(),
+        saveErrorAt: Date.now()
+      });
+      setNoteAutoSaveStatus('保存失败，已留草稿', 'error');
+      if (source === 'auto' && !noteAutoSaveErrorNotified) {
+        showBottomTip('自动保存失败，已保留本地草稿。', 'error');
+        noteAutoSaveErrorNotified = true;
+      }
+      throw err;
+    }
+
+    if (currentEditingNote && currentEditingNote.id === noteId) {
+      noteAutoSaveLastSignature = savedSignature;
+      noteAutoSaveErrorNotified = false;
+      if (getCurrentEditorSignature() === savedSignature) {
+        clearNoteDraft(noteId);
+      } else {
+        writeCurrentNoteDraft();
+      }
+      setNoteAutoSaveStatus(source === 'manual' ? '已保存' : '已自动保存', 'saved');
+    }
+
+    return true;
+  }
+
+  async function runNoteAutoSave() {
+    clearTimeout(noteAutoSaveTimer);
+    noteAutoSaveTimer = null;
+    if (!isCurrentNoteAutosavable()) return;
+
+    const currentSignature = getCurrentEditorSignature();
+    if (currentSignature === noteAutoSaveLastSignature) {
+      clearNoteDraft(currentEditingNote.id);
+      setNoteAutoSaveStatus('已保存', 'saved');
+      return;
+    }
+
+    if (noteAutoSaveInFlight) {
+      noteAutoSaveTimer = setTimeout(runNoteAutoSave, 300);
+      return;
+    }
+
+    noteAutoSaveInFlight = true;
+    setNoteAutoSaveStatus('正在自动保存...', 'saving');
+    try {
+      await persistCurrentEditableNote({ source: 'auto' });
+    } catch (err) {
+      console.error('Auto save note failed:', err);
+    } finally {
+      noteAutoSaveInFlight = false;
+    }
+
+    if (isCurrentNoteAutosavable() && getCurrentEditorSignature() !== noteAutoSaveLastSignature) {
+      scheduleNoteAutoSave();
+    }
+  }
+
+  function scheduleNoteAutoSave({ immediate = false } = {}) {
+    if (!isCurrentNoteAutosavable()) return;
+
+    const draft = writeCurrentNoteDraft();
+    const currentSignature = getCurrentEditorSignature();
+    if (!draft && currentSignature === noteAutoSaveLastSignature) {
+      setNoteAutoSaveStatus('已保存', 'saved');
+      return;
+    }
+
+    if (currentSignature === noteAutoSaveLastSignature) {
+      clearNoteDraft(currentEditingNote.id);
+      setNoteAutoSaveStatus('已保存', 'saved');
+      return;
+    }
+
+    setNoteAutoSaveStatus('有未保存修改', 'pending');
+    clearTimeout(noteAutoSaveTimer);
+    noteAutoSaveTimer = setTimeout(runNoteAutoSave, immediate ? 0 : NOTE_AUTOSAVE_DELAY_MS);
+  }
+
+  async function flushCurrentNoteAutoSave() {
+    if (!isCurrentNoteAutosavable()) return;
+    writeCurrentNoteDraft();
+    if (getCurrentEditorSignature() === noteAutoSaveLastSignature) {
+      clearNoteDraft(currentEditingNote.id);
+      setNoteAutoSaveStatus('已保存', 'saved');
+      return;
+    }
+    await runNoteAutoSave();
+  }
+
+  function resetNoteAutoSaveState() {
+    clearTimeout(noteAutoSaveTimer);
+    noteAutoSaveTimer = null;
+    noteAutoSaveLastSignature = '';
+    noteAutoSaveErrorNotified = false;
+    currentEditorIsEditMode = false;
+    hideDraftRecoveryBar();
+    if (noteAutoSaveStatus) {
+      noteAutoSaveStatus.classList.add('hidden');
+      noteAutoSaveStatus.dataset.state = 'idle';
+      noteAutoSaveStatus.textContent = '已保存';
+    }
   }
 
   // Render Sidebar Filters
@@ -5942,7 +6385,9 @@ function initNotesFeature() {
 
   // Open Note in Editor
   function openNoteInEditor(note, isNew = false) {
+    resetNoteAutoSaveState();
     currentEditingNote = note;
+    noteAutoSaveLastSignature = getStoredNoteSignature(note);
     
     // Toggle panels
     notesGridView.classList.add('hidden');
@@ -5968,6 +6413,7 @@ function initNotesFeature() {
 
     renderPreview();
     toggleEditorMode(isNew);
+    showDraftRecoveryIfNeeded(note);
   }
 
   // Toggle between View mode and Edit mode inside note detail pane
@@ -5997,6 +6443,7 @@ function initNotesFeature() {
     const isImageMaterial = isImageMaterialNote(currentEditingNote);
     const editorTitleRow = document.querySelector('.editor-title-row');
     const editorMetaInfo = document.querySelector('.editor-meta-info');
+    currentEditorIsEditMode = Boolean(isEdit && !isMaterial);
 
     if (noteEditorView) {
       noteEditorView.classList.toggle('pdf-reading-mode', isPdfMaterial);
@@ -6004,6 +6451,9 @@ function initNotesFeature() {
     syncMaterialCategoryControl(isImageMaterial);
 
     if (isMaterial) {
+      currentEditorIsEditMode = false;
+      setNoteAutoSaveStatus('已保存', 'idle', false);
+      hideDraftRecoveryBar();
       if (editorTitleRow) {
         if (isPdfMaterial) {
           editorTitleRow.classList.add('hidden');
@@ -6042,6 +6492,9 @@ function initNotesFeature() {
         markdownPreviewHeader.classList.remove('hidden');
         markdownPreviewHeader.textContent = '实时渲染预览';
       }
+      if (!pendingRecoveryDraft) {
+        setNoteAutoSaveStatus('已保存', 'saved');
+      }
     } else {
       if (btnEditNote) btnEditNote.classList.remove('hidden');
       if (btnInsertScreenshot) btnInsertScreenshot.classList.add('hidden');
@@ -6057,6 +6510,9 @@ function initNotesFeature() {
       if (markdownPreviewHeader) {
         markdownPreviewHeader.classList.add('hidden');
       }
+      if (!pendingRecoveryDraft) {
+        setNoteAutoSaveStatus('已保存', 'saved');
+      }
     }
   }
 
@@ -6064,6 +6520,7 @@ function initNotesFeature() {
 
   // Close editor and go back to grid
   function closeEditor() {
+    resetNoteAutoSaveState();
     currentEditingNote = null;
     if (noteEditorView) noteEditorView.classList.remove('pdf-reading-mode');
     noteEditorView.classList.add('hidden');
@@ -6071,9 +6528,10 @@ function initNotesFeature() {
   }
   
   if (btnCloseEditor) {
-    btnCloseEditor.addEventListener('click', () => {
+    btnCloseEditor.addEventListener('click', async () => {
+      await flushCurrentNoteAutoSave();
       closeEditor();
-      loadAndRenderNotes();
+      await loadAndRenderNotes();
     });
   }
 
@@ -6325,9 +6783,10 @@ function initNotesFeature() {
       renderPdfSpread(reader, state, statusEl, syncControls, applyAutoFit);
     };
 
-    reader.querySelector('[data-action="back-list"]').addEventListener('click', () => {
+    reader.querySelector('[data-action="back-list"]').addEventListener('click', async () => {
+      await flushCurrentNoteAutoSave();
       closeEditor();
-      loadAndRenderNotes();
+      await loadAndRenderNotes();
     });
     reader.querySelector('[data-action="prev"]').addEventListener('click', () => {
       const step = state.pageMode === 'double' ? 2 : 1;
@@ -6623,31 +7082,21 @@ function initNotesFeature() {
   if (btnSaveNote) {
     btnSaveNote.addEventListener('click', async () => {
       if (!currentEditingNote) return;
-      
-      const title = noteTitleInput.value.trim();
-      const content = noteContentInput.value;
-      const categoryId = noteCategorySelect.value;
-      
-      currentEditingNote.title = title || '无标题笔记';
-      currentEditingNote.content = content;
-      currentEditingNote.categoryId = categoryId;
-      currentEditingNote.updatedAt = Date.now();
-      
-      // Update DB
-      const existingIdx = notesDB.notes.findIndex(n => n.id === currentEditingNote.id);
-      if (existingIdx !== -1) {
-        notesDB.notes[existingIdx] = currentEditingNote;
-      } else {
-        notesDB.notes.push(currentEditingNote);
+      clearTimeout(noteAutoSaveTimer);
+      noteAutoSaveTimer = null;
+
+      try {
+        setNoteAutoSaveStatus('正在保存...', 'saving');
+        await persistCurrentEditableNote({ source: 'manual' });
+        showBottomTip('保存成功！');
+        renderPreview();
+        renderSidebarFilters();
+        renderNotesGrid();
+        toggleEditorMode(false);
+      } catch (err) {
+        console.error('Save note failed:', err);
+        showBottomTip('保存失败，已保留本地草稿。', 'error');
       }
-      
-      await ipcRenderer.invoke('save-notes-db', notesDB);
-      
-      showBottomTip('保存成功！');
-      renderPreview();
-      renderSidebarFilters();
-      renderNotesGrid();
-      toggleEditorMode(false);
     });
   }
 
@@ -6657,6 +7106,7 @@ function initNotesFeature() {
       if (!currentEditingNote) return;
       
       if (confirm('确认删除这篇笔记吗？此操作无法撤销。')) {
+        clearNoteDraft(currentEditingNote.id);
         notesDB.notes = notesDB.notes.filter(n => n.id !== currentEditingNote.id);
         await ipcRenderer.invoke('save-notes-db', notesDB);
         closeEditor();
@@ -6742,8 +7192,35 @@ function initNotesFeature() {
 
   // Trigger preview render on input text changes
   if (noteContentInput) {
-    noteContentInput.addEventListener('input', renderPreview);
+    noteContentInput.addEventListener('input', () => {
+      renderPreview();
+      scheduleNoteAutoSave();
+    });
   }
+
+  if (noteTitleInput) {
+    noteTitleInput.addEventListener('input', () => {
+      scheduleNoteAutoSave();
+    });
+  }
+
+  if (noteCategorySelect) {
+    noteCategorySelect.addEventListener('change', () => {
+      scheduleNoteAutoSave({ immediate: true });
+    });
+  }
+
+  if (btnRestoreNoteDraft) {
+    btnRestoreNoteDraft.addEventListener('click', applyPendingRecoveryDraft);
+  }
+
+  if (btnDiscardNoteDraft) {
+    btnDiscardNoteDraft.addEventListener('click', discardPendingRecoveryDraft);
+  }
+
+  window.addEventListener('beforeunload', () => {
+    writeCurrentNoteDraft();
+  });
 
   // Global search input handling
   if (notesSearchInput) {
