@@ -23,3 +23,5 @@ dist/
 out/
 build/icon.iconset/
 build/generate_icns.sh # The generator script is fine to keep, but we can keep it tracked. Let's make sure only build outputs are ignored.
+
+CLAUDE.md

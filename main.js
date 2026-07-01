@@ -70,6 +70,17 @@ function checkFolderWritable(dirPath) {
 
 // Supported extensions by Chromium natively
 const NATIVE_EXTENSIONS = ['.mp4', '.webm', '.ogg', '.mov', '.m4v'];
+const VIDEO_EXTENSIONS = ['.mp4', '.mkv', '.rmvb', '.avi', '.mov', '.flv', '.wmv', '.webm', '.m4v', '.ts', '.3gp'];
+const PDF_EXTENSIONS = ['.pdf'];
+const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.svg', '.avif', '.tif', '.tiff'];
+const SUPPORTED_MEDIA_EXTENSIONS = new Set([...VIDEO_EXTENSIONS, ...PDF_EXTENSIONS, ...IMAGE_EXTENSIONS]);
+
+function getMediaKindByExt(ext) {
+  if (VIDEO_EXTENSIONS.includes(ext)) return 'video';
+  if (PDF_EXTENSIONS.includes(ext)) return 'pdf';
+  if (IMAGE_EXTENSIONS.includes(ext)) return 'image';
+  return null;
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -115,6 +126,18 @@ function startVideoServer() {
           contentType = 'application/pdf';
         } else if (ext === '.jpg' || ext === '.jpeg') {
           contentType = 'image/jpeg';
+        } else if (ext === '.webp') {
+          contentType = 'image/webp';
+        } else if (ext === '.gif') {
+          contentType = 'image/gif';
+        } else if (ext === '.bmp') {
+          contentType = 'image/bmp';
+        } else if (ext === '.svg') {
+          contentType = 'image/svg+xml';
+        } else if (ext === '.avif') {
+          contentType = 'image/avif';
+        } else if (ext === '.tif' || ext === '.tiff') {
+          contentType = 'image/tiff';
         } else if (ext === '.txt') {
           contentType = 'text/plain; charset=utf-8';
         }
@@ -345,18 +368,19 @@ function buildDirectoryTree(dirPath, depth = 0) {
 
       if (fileStats.isDirectory()) {
         const subTree = buildDirectoryTree(fullPath, depth + 1);
-        // Only add folder if it contains video files (recursively)
+        // Only add folder if it contains supported media files (recursively)
         if (subTree && subTree.children && subTree.children.length > 0) {
           children.push(subTree);
         }
       } else {
         const ext = path.extname(file).toLowerCase();
-        const videoExtensions = ['.mp4', '.mkv', '.rmvb', '.avi', '.mov', '.flv', '.wmv', '.webm', '.m4v', '.ts', '.3gp'];
-        if (videoExtensions.includes(ext)) {
+        const mediaKind = getMediaKindByExt(ext);
+        if (SUPPORTED_MEDIA_EXTENSIONS.has(ext) && mediaKind) {
           children.push({
             name: file,
             path: fullPath,
             type: 'file',
+            mediaKind,
             size: fileStats.size
           });
         }

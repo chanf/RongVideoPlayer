@@ -82,7 +82,7 @@
             <circle cx="11" cy="11" r="8"></circle>
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
-          <input type="text" id="search-input" placeholder="搜索视频文件...">
+          <input type="text" id="search-input" placeholder="搜索媒体文件...">
         </div>
       </div>
       
@@ -101,7 +101,7 @@
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
             </svg>
             <p>尚未选择文件夹</p>
-            <span>点击上方按钮导入包含视频的文件夹</span>
+            <span>点击上方按钮导入包含视频、PDF 或图片的文件夹</span>
           </div>
         </div>
 
@@ -113,6 +113,86 @@
     <main class="player-container" id="player-container">
       <!-- The Video Element -->
       <video id="video-element" preload="auto"></video>
+
+      <!-- Main Image Previewer -->
+      <div id="main-image-viewer" class="main-media-viewer main-image-viewer hidden">
+        <div class="main-viewer-toolbar">
+          <div class="main-viewer-title-group">
+            <span class="main-viewer-badge">IMG</span>
+            <div>
+              <div id="main-image-title" class="main-viewer-title">图片预览</div>
+              <div id="main-image-status" class="main-viewer-subtitle">适合窗口显示</div>
+            </div>
+          </div>
+          <div class="main-viewer-controls">
+            <button type="button" id="btn-main-image-fit">适合窗口</button>
+            <button type="button" id="btn-main-image-open">系统打开</button>
+          </div>
+        </div>
+        <div class="main-image-stage">
+          <img id="main-image-preview" alt="图片预览">
+        </div>
+      </div>
+
+      <!-- Main PDF Reader -->
+      <div id="main-pdf-viewer" class="main-media-viewer main-pdf-viewer hidden">
+        <div class="main-viewer-toolbar">
+          <div class="main-viewer-title-group">
+            <span class="main-viewer-badge pdf">PDF</span>
+            <div>
+              <div id="main-pdf-title" class="main-viewer-title">PDF 阅读器</div>
+              <div id="main-pdf-status" class="main-viewer-subtitle">正在读取 PDF...</div>
+            </div>
+          </div>
+          <div class="main-viewer-controls">
+            <button type="button" data-main-pdf-action="prev">上一页</button>
+            <div class="main-pdf-page-jump">
+              <input type="number" min="1" value="1" id="main-pdf-page-input">
+              <span>/</span>
+              <span id="main-pdf-page-count">--</span>
+            </div>
+            <button type="button" data-main-pdf-action="next">下一页</button>
+            <span class="main-viewer-divider"></span>
+            <button type="button" data-main-pdf-action="zoom-out">-</button>
+            <span id="main-pdf-zoom-label">100%</span>
+            <button type="button" data-main-pdf-action="zoom-in">+</button>
+            <span class="main-viewer-divider"></span>
+            <button type="button" data-main-pdf-action="open-file">系统打开</button>
+            <button type="button" data-main-pdf-action="toggle-page-mode">双页</button>
+            <button type="button" class="main-viewer-icon-button" data-main-pdf-action="toggle-fullscreen" title="全屏阅读" aria-label="全屏阅读">
+              <svg data-role="fullscreen-enter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M8 3H3v5"></path>
+                <path d="M3 3l7 7"></path>
+                <path d="M16 3h5v5"></path>
+                <path d="M21 3l-7 7"></path>
+                <path d="M8 21H3v-5"></path>
+                <path d="M3 21l7-7"></path>
+                <path d="M16 21h5v-5"></path>
+                <path d="M21 21l-7-7"></path>
+              </svg>
+              <svg data-role="fullscreen-exit" class="hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10 3v7H3"></path>
+                <path d="M3 10l7-7"></path>
+                <path d="M14 3v7h7"></path>
+                <path d="M21 10l-7-7"></path>
+                <path d="M10 21v-7H3"></path>
+                <path d="M3 14l7 7"></path>
+                <path d="M14 21v-7h7"></path>
+                <path d="M21 14l-7 7"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="main-pdf-spread" id="main-pdf-spread">
+          <div class="main-pdf-page-slot" data-role="main-left-page">
+            <div class="main-viewer-loading">请选择 PDF 文件</div>
+          </div>
+          <div class="main-pdf-page-slot" data-role="main-right-page">
+            <div class="main-viewer-loading">请选择 PDF 文件</div>
+          </div>
+        </div>
+      </div>
+
       <div id="screenshot-flash" class="screenshot-flash hidden"></div>
       <div id="screenshot-toast" class="screenshot-toast hidden">
         <img id="screenshot-toast-img">
@@ -131,7 +211,7 @@
             </svg>
           </div>
           <h1>Rong VideoPlayer</h1>
-          <p>支持播放 MP4, MKV, RMVB 等多种主流格式</p>
+          <p>支持视频播放、PDF 原生阅读以及常见图片预览</p>
           <div class="shortcuts-guide">
             <div class="shortcut-item"><span class="key">Space</span> 播放 / 暂停</div>
             <div class="shortcut-item"><span class="key">←</span> <span class="key">→</span> 快退 / 快进 15秒</div>

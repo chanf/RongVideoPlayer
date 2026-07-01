@@ -9,6 +9,7 @@ let autoplayNext = true;
 let expandedFolders = new Set();
 let currentFilePath = '';
 let currentFileDuration = 0;
+let currentViewerMode = 'welcome';
 let isTranscoding = false;
 let transcodeStartTime = 0;
 let playbackSpeed = 1.0;
@@ -22,6 +23,28 @@ let communityCollections = [];
 let communityCategories = [];
 let screenshotsDB = { categories: [], screenshots: [] };
 let folderCategories = {}; // { [folderPath]: categoryId }
+let mainViewerToken = 0;
+let mainPdfState = null;
+let mainPdfResizeObserver = null;
+let hasPersistedExpandedFolders = false;
+
+const VIDEO_EXTENSIONS = ['.mp4', '.mkv', '.rmvb', '.avi', '.mov', '.flv', '.wmv', '.webm', '.m4v', '.ts', '.3gp'];
+const PDF_EXTENSIONS = ['.pdf'];
+const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.svg', '.avif', '.tif', '.tiff'];
+const MAIN_PDF_PAGE_MODE_STORAGE_KEY = 'rong_main_pdf_page_mode';
+
+function getMediaKind(filePath, fallbackKind = null) {
+  if (fallbackKind) return fallbackKind;
+  const ext = path.extname(filePath || '').toLowerCase();
+  if (VIDEO_EXTENSIONS.includes(ext)) return 'video';
+  if (PDF_EXTENSIONS.includes(ext)) return 'pdf';
+  if (IMAGE_EXTENSIONS.includes(ext)) return 'image';
+  return null;
+}
+
+function getExpandedFolderList() {
+  return Array.from(expandedFolders).filter(Boolean);
+}
 
 // DOM Elements
 const btnOpenFolder = document.getElementById('btn-open-folder');
@@ -37,6 +60,19 @@ const controlsOverlay = document.getElementById('controls-overlay');
 const welcomeOverlay = document.getElementById('welcome-overlay');
 const loadingOverlay = document.getElementById('loading-overlay');
 const loadingText = document.getElementById('loading-text');
+const mainImageViewer = document.getElementById('main-image-viewer');
+const mainImagePreview = document.getElementById('main-image-preview');
+const mainImageTitle = document.getElementById('main-image-title');
+const mainImageStatus = document.getElementById('main-image-status');
+const btnMainImageFit = document.getElementById('btn-main-image-fit');
+const btnMainImageOpen = document.getElementById('btn-main-image-open');
+const mainPdfViewer = document.getElementById('main-pdf-viewer');
+const mainPdfTitle = document.getElementById('main-pdf-title');
+const mainPdfStatus = document.getElementById('main-pdf-status');
+const mainPdfSpread = document.getElementById('main-pdf-spread');
+const mainPdfPageInput = document.getElementById('main-pdf-page-input');
+const mainPdfPageCount = document.getElementById('main-pdf-page-count');
+const mainPdfZoomLabel = document.getElementById('main-pdf-zoom-label');
 
 const videoTitle = document.getElementById('video-title');
 const btnPlayPause = document.getElementById('btn-play-pause');
@@ -168,8 +204,12 @@ function setupEventListeners() {
   videoElement.addEventListener('timeupdate', onVideoTimeUpdate);
   videoElement.addEventListener('progress', onVideoProgress);
   videoElement.addEventListener('loadedmetadata', onVideoLoadedMetadata);
-  videoElement.addEventListener('waiting', () => showLoading('视频正在缓冲...'));
-  videoElement.addEventListener('playing', hideLoading);
+  videoElement.addEventListener('waiting', () => {
+    if (currentViewerMode === 'video') showLoading('视频正在缓冲...');
+  });
+  videoElement.addEventListener('playing', () => {
+    if (currentViewerMode === 'video') hideLoading();
+  });
   videoElement.addEventListener('click', togglePlayPause);
   videoElement.addEventListener('dblclick', toggleFullscreen);
   videoElement.addEventListener('ended', onVideoEnded);
@@ -248,6 +288,36 @@ function setupEventListeners() {
   // Keyboard Shortcuts
   document.addEventListener('keydown', handleKeyboardShortcuts);
 
+  // Main image/PDF viewer controls
+  if (btnMainImageOpen) {
+    btnMainImageOpen.addEventListener('click', () => {
+      if (currentViewerMode === 'image' && currentFilePath) {
+        ipcRenderer.invoke('open-path', currentFilePath);
+      }
+    });
+  }
+  if (btnMainImageFit) {
+    btnMainImageFit.addEventListener('click', resetMainImageFit);
+  }
+  if (mainPdfViewer) {
+    mainPdfViewer.addEventListener('click', (e) => {
+      const button = e.target.closest('[data-main-pdf-action]');
+      if (!button) return;
+      handleMainPdfAction(button.dataset.mainPdfAction);
+    });
+  }
+  if (mainPdfPageInput) {
+    mainPdfPageInput.addEventListener('change', () => {
+      goToMainPdfPage(mainPdfPageInput.value);
+    });
+    mainPdfPageInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        goToMainPdfPage(mainPdfPageInput.value);
+      }
+    });
+  }
+
   // Hover Overlay Logic for Controls
   playerContainer.addEventListener('mousemove', triggerControlsVisibility);
   playerContainer.addEventListener('mouseleave', () => {
@@ -274,11 +344,69 @@ function formatTime(seconds) {
 // -------------------------------------------------------------
 // History Management & Recovery
 // -------------------------------------------------------------
+function saveMediaTreeState(extra = {}) {
+  const payload = {
+    lastDirectory: currentDirectory,
+    expandedFolders: getExpandedFolderList(),
+    ...extra
+  };
+
+  if (currentFilePath && !Object.prototype.hasOwnProperty.call(payload, 'lastMediaFile')) {
+    payload.lastMediaFile = currentFilePath;
+    payload.lastMediaKind = getMediaKind(currentFilePath, currentViewerMode) || currentViewerMode;
+  }
+
+  ipcRenderer.invoke('save-history', payload);
+}
+
+function getLastMediaRestoreTarget(history) {
+  const filePath = history.lastMediaFile || history.lastPlayedFile || '';
+  if (!filePath) return null;
+
+  const mediaKind = getMediaKind(filePath, history.lastMediaKind);
+  if (!mediaKind) return null;
+
+  return { filePath, mediaKind };
+}
+
+function restoreLastMediaFromHistory(history, autoResume) {
+  if (!autoResume) return;
+
+  const target = getLastMediaRestoreTarget(history);
+  if (!target) return;
+
+  const { filePath, mediaKind } = target;
+  const progress = mediaKind === 'video' && history.lastPlayedFile === filePath
+    ? history.lastProgress || 0
+    : 0;
+
+  if (mediaKind === 'video') {
+    showLoading('正在恢复上次播放进度...');
+  } else if (mediaKind === 'pdf') {
+    showLoading('正在恢复上次阅读的 PDF...');
+  } else if (mediaKind === 'image') {
+    showLoading('正在恢复上次查看的图片...');
+  }
+
+  setTimeout(() => {
+    if (mediaKind === 'video') {
+      playVideo(filePath, progress, false);
+    } else {
+      openMediaFile(filePath, mediaKind);
+    }
+  }, 500);
+}
+
 async function loadHistoryAndResume() {
   const history = await ipcRenderer.invoke('get-history');
   
   if (history.folderCategories) {
     folderCategories = history.folderCategories;
+  }
+
+  if (Array.isArray(history.expandedFolders)) {
+    expandedFolders = new Set(history.expandedFolders.filter(Boolean));
+    hasPersistedExpandedFolders = true;
   }
   
   // Load screenshots DB so categories are available for rendering badges
@@ -351,31 +479,11 @@ async function loadHistoryAndResume() {
     });
   }
 
-  // Restore last played file and progress
-  if (autoResume && history.lastPlayedFile && history.lastProgress !== undefined) {
-    const filePath = history.lastPlayedFile;
-    const progress = history.lastProgress;
-    
-    // Check if the file still exists in the local filesystem by checking the tree
-    const fileExists = checkFileExists(filePath);
-    if (fileExists) {
-      // Auto-load but don't autoplay, let user click or resume
-      showLoading('正在恢复上次播放进度...');
-      
-      // We load the video and seek to progress, but keep paused initially
-      setTimeout(() => {
-        playVideo(filePath, progress, false);
-      }, 500);
-    }
-  }
-}
-
-function checkFileExists(filePath) {
-  // Quick check inside tree structure, or let probe fail
-  return true;
+  restoreLastMediaFromHistory(history, autoResume);
 }
 
 function savePlaybackProgress() {
+  if (currentViewerMode !== 'video') return;
   if (!currentFilePath) return;
 
   const currentSec = isTranscoding 
@@ -389,6 +497,9 @@ function savePlaybackProgress() {
 
   ipcRenderer.invoke('save-history', {
     lastDirectory: currentDirectory,
+    expandedFolders: getExpandedFolderList(),
+    lastMediaFile: currentFilePath,
+    lastMediaKind: 'video',
     lastPlayedFile: currentFilePath,
     lastProgress: currentSec,
     volume: videoElement.volume,
@@ -554,6 +665,7 @@ function setTheme(theme) {
 
 // Start periodic history saving
 function startHistorySaveTimer() {
+  if (currentViewerMode !== 'video') return;
   stopHistorySaveTimer();
   historySaveInterval = setInterval(savePlaybackProgress, 2000);
 }
@@ -572,11 +684,14 @@ async function selectDirectory() {
   const result = await ipcRenderer.invoke('select-directory');
   if (result) {
     currentDirectory = result.folderPath;
+    expandedFolders = new Set();
+    hasPersistedExpandedFolders = false;
+    lastRenderedRootPath = '';
     renderDirectoryTree(result.tree);
     if (typeof updateSavePathLabel === 'function') updateSavePathLabel();
     
     // Save directory path to history
-    ipcRenderer.invoke('save-history', { lastDirectory: currentDirectory });
+    saveMediaTreeState();
   }
 }
 
@@ -587,8 +702,8 @@ function renderDirectoryTree(tree) {
   if (!tree || !tree.children || tree.children.length === 0) {
     directoryTree.innerHTML = `
       <div class="tree-placeholder">
-        <p>目录中无支持的视频文件</p>
-        <span>支持扩展名：mp4, mkv, rmvb, avi, flv, mov, wmv 等</span>
+        <p>目录中无支持的媒体文件</p>
+        <span>支持视频、PDF 以及常见图片格式</span>
       </div>
     `;
     return;
@@ -603,7 +718,7 @@ function renderDirectoryTree(tree) {
     directoryTree.appendChild(childElement);
     
     // Auto-expand first-level directories if we are loading a new root directory
-    if (isNewRoot && child.type === 'directory') {
+    if (isNewRoot && child.type === 'directory' && !hasPersistedExpandedFolders) {
       expandedFolders.add(child.path);
     }
   });
@@ -625,6 +740,7 @@ function createTreeNodeDOM(node, depth = 0) {
 
   const itemDiv = document.createElement('div');
   itemDiv.className = 'tree-item';
+  const mediaKind = node.type === 'file' ? getMediaKind(node.path, node.mediaKind) : null;
   
   // Indentation spacers
   for (let i = 0; i < depth; i++) {
@@ -653,13 +769,31 @@ function createTreeNodeDOM(node, depth = 0) {
   }
   itemDiv.appendChild(arrowSpan);
 
-  // Icon (Folder vs Video)
+  // Icon (Folder vs supported media file)
   const iconSpan = document.createElement('span');
-  iconSpan.className = 'tree-icon';
+  iconSpan.className = `tree-icon ${mediaKind ? `tree-icon-${mediaKind}` : ''}`;
   if (node.type === 'directory') {
     iconSpan.innerHTML = `
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+      </svg>
+    `;
+  } else if (mediaKind === 'pdf') {
+    iconSpan.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+        <polyline points="14 2 14 8 20 8"></polyline>
+        <path d="M8 15h1.5a1.5 1.5 0 0 0 0-3H8v5"></path>
+        <path d="M13 12v5"></path>
+        <path d="M16 12h2"></path>
+      </svg>
+    `;
+  } else if (mediaKind === 'image') {
+    iconSpan.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+        <circle cx="8.5" cy="8.5" r="1.5"></circle>
+        <polyline points="21 15 16 10 5 21"></polyline>
       </svg>
     `;
   } else {
@@ -674,7 +808,7 @@ function createTreeNodeDOM(node, depth = 0) {
 
   // Prepend watch status dot for file items
   let fileProgress = 0;
-  if (node.type === 'file') {
+  if (node.type === 'file' && mediaKind === 'video') {
     const historyItem = recentList.find(item => item.path === node.path);
     const dotSpan = document.createElement('span');
     dotSpan.className = 'tree-watch-dot';
@@ -775,7 +909,7 @@ function createTreeNodeDOM(node, depth = 0) {
       itemDelete.style.color = '#ef4444';
       itemDelete.textContent = '删除目录';
       itemDelete.addEventListener('click', async () => {
-        if (confirm(`警告：确认要彻底删除目录 "${node.name}" 及其所有子目录和视频文件吗？此操作不可逆！`)) {
+        if (confirm(`警告：确认要彻底删除目录 "${node.name}" 及其所有子目录和媒体文件吗？此操作不可逆！`)) {
           const success = await ipcRenderer.invoke('delete-directory-folder', node.path);
           if (success) {
             // Re-scan parent tree or reload directory
@@ -887,10 +1021,10 @@ function createTreeNodeDOM(node, depth = 0) {
       toggleFolderDOM(itemDiv, nodeDiv);
     });
   } else if (node.type === 'file') {
-    // Click file to play video
+    // Click file to open with the matching viewer
     itemDiv.addEventListener('click', (e) => {
       e.stopPropagation();
-      playVideo(node.path, 0, true);
+      openMediaFile(node.path, mediaKind);
     });
   }
 
@@ -911,6 +1045,8 @@ function toggleFolderDOM(itemDiv, nodeDiv) {
     arrow.classList.remove('expanded');
     expandedFolders.delete(path);
   }
+
+  saveMediaTreeState();
 }
 
 // -------------------------------------------------------------
@@ -1076,7 +1212,7 @@ function handleSearch() {
     return;
   }
 
-  // 搜索时将目录行隐藏，使结果只展示匹配的视频文件名
+  // 搜索时将目录行隐藏，使结果只展示匹配的媒体文件名
   document.querySelectorAll('.tree-node[data-type="directory"] > .tree-item').forEach(item => {
     item.style.display = 'none';
   });
@@ -1136,7 +1272,611 @@ function handleSearch() {
 // -------------------------------------------------------------
 // Video Player Controls & Streaming
 // -------------------------------------------------------------
+function ensurePlayerContainerVisible() {
+  const views = [
+    ['downloader-view', 'btn-toggle-downloader'],
+    ['community-view', 'btn-toggle-community'],
+    ['screenshots-view', 'btn-toggle-screenshots'],
+    ['settings-view', 'btn-toggle-settings'],
+    ['notes-view', 'btn-toggle-notes']
+  ];
+
+  views.forEach(([viewId, toggleId]) => {
+    const view = document.getElementById(viewId);
+    const toggle = document.getElementById(toggleId);
+    if (view && !view.classList.contains('hidden')) {
+      if (toggle) toggle.classList.remove('active');
+      view.classList.add('hidden');
+    }
+  });
+
+  if (playerContainer) playerContainer.classList.remove('hidden');
+}
+
+function resetVideoControlsForDocumentMode() {
+  stopHistorySaveTimer();
+  videoElement.pause();
+  videoElement.removeAttribute('src');
+  videoElement.load();
+  iconPlay.classList.remove('hidden');
+  iconPause.classList.add('hidden');
+  timelineSlider.value = 0;
+  timelineProgress.style.width = '0%';
+  timelineBuffered.style.width = '0%';
+  currentTimeLabel.textContent = '00:00';
+  totalDurationLabel.textContent = '00:00';
+  transcodeTag.classList.add('hidden');
+  currentFileDuration = 0;
+  isTranscoding = false;
+  transcodeStartTime = 0;
+}
+
+function setMainViewerMode(mode) {
+  currentViewerMode = mode;
+  playerContainer.classList.remove('viewer-mode-video', 'viewer-mode-image', 'viewer-mode-pdf', 'viewer-mode-welcome');
+  playerContainer.classList.add(`viewer-mode-${mode}`);
+
+  videoElement.classList.toggle('hidden', mode !== 'video');
+  if (mainImageViewer) mainImageViewer.classList.toggle('hidden', mode !== 'image');
+  if (mainPdfViewer) mainPdfViewer.classList.toggle('hidden', mode !== 'pdf');
+
+  if (mode === 'video') {
+    controlsOverlay.classList.remove('hidden');
+  } else {
+    controlsOverlay.classList.add('hidden');
+    playerContainer.style.cursor = 'default';
+  }
+
+  if (mode !== 'welcome') {
+    welcomeOverlay.style.opacity = '0';
+    welcomeOverlay.classList.add('hidden');
+  }
+}
+
+function openMediaFile(filePath, mediaKind = null) {
+  const kind = getMediaKind(filePath, mediaKind);
+  if (kind === 'video') {
+    playVideo(filePath, 0, true);
+    return;
+  }
+  if (kind === 'pdf') {
+    openPdfInMainViewer(filePath);
+    return;
+  }
+  if (kind === 'image') {
+    openImageInMainViewer(filePath);
+    return;
+  }
+  alert('暂不支持该文件类型');
+}
+
+function preloadMainImage(src, alt) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.alt = alt;
+    img.decoding = 'async';
+    img.onload = async () => {
+      try {
+        if (typeof img.decode === 'function') await img.decode();
+      } catch (_) {
+        // Cached or animated images may reject decode(); onload is sufficient for preview.
+      }
+      resolve(img);
+    };
+    img.onerror = () => reject(new Error('图片加载失败'));
+    img.src = src;
+  });
+}
+
+function disconnectMainPdfResizeObserver() {
+  if (mainPdfResizeObserver) {
+    mainPdfResizeObserver.disconnect();
+    mainPdfResizeObserver = null;
+  }
+}
+
+function getStoredMainPdfPageMode() {
+  try {
+    const mode = localStorage.getItem(MAIN_PDF_PAGE_MODE_STORAGE_KEY);
+    return mode === 'single' || mode === 'double' ? mode : 'double';
+  } catch (_) {
+    return 'double';
+  }
+}
+
+function saveStoredMainPdfPageMode(mode) {
+  if (mode !== 'single' && mode !== 'double') return;
+  try {
+    localStorage.setItem(MAIN_PDF_PAGE_MODE_STORAGE_KEY, mode);
+  } catch (_) {
+    // Ignore storage failures; reading can still continue with the default mode.
+  }
+}
+
+function isMainPdfFullscreen() {
+  return document.fullscreenElement === playerContainer;
+}
+
+function syncMainPdfFullscreenButton() {
+  if (!mainPdfViewer) return;
+  const fullscreenBtn = mainPdfViewer.querySelector('[data-main-pdf-action="toggle-fullscreen"]');
+  if (!fullscreenBtn) return;
+
+  const isFullscreen = isMainPdfFullscreen();
+  const enterIcon = fullscreenBtn.querySelector('[data-role="fullscreen-enter"]');
+  const exitIcon = fullscreenBtn.querySelector('[data-role="fullscreen-exit"]');
+  fullscreenBtn.disabled = !mainPdfState?.pageCount;
+  fullscreenBtn.classList.toggle('active', isFullscreen);
+  fullscreenBtn.title = isFullscreen ? '恢复主界面显示' : '全屏阅读';
+  fullscreenBtn.setAttribute('aria-label', fullscreenBtn.title);
+  if (enterIcon) enterIcon.classList.toggle('hidden', isFullscreen);
+  if (exitIcon) exitIcon.classList.toggle('hidden', !isFullscreen);
+}
+
+async function toggleMainPdfFullscreen() {
+  if (!playerContainer || !mainPdfViewer || mainPdfViewer.classList.contains('hidden')) return;
+
+  try {
+    if (isMainPdfFullscreen()) {
+      await document.exitFullscreen();
+    } else {
+      await playerContainer.requestFullscreen();
+    }
+  } catch (err) {
+    console.error('PDF fullscreen toggle failed:', err);
+  } finally {
+    syncMainPdfFullscreenButton();
+  }
+}
+
+function resetMainImageFit() {
+  if (mainImagePreview) {
+    mainImagePreview.style.maxWidth = '100%';
+    mainImagePreview.style.maxHeight = '100%';
+    mainImagePreview.style.transform = '';
+  }
+  const stage = document.querySelector('.main-image-stage');
+  if (stage) stage.scrollTo({ left: 0, top: 0, behavior: 'smooth' });
+  if (mainImageStatus) mainImageStatus.textContent = '适合窗口显示';
+}
+
+function resetMainPdfSlots(message = '请选择 PDF 文件', className = 'main-viewer-loading') {
+  if (!mainPdfSpread) return;
+  mainPdfSpread.querySelectorAll('.main-pdf-page-slot').forEach(slot => {
+    slot.classList.remove('empty', 'is-rendering-next', 'page-turn-forward', 'page-turn-backward');
+    delete slot.dataset.pageNumber;
+    const content = document.createElement('div');
+    content.className = className;
+    content.textContent = message;
+    slot.replaceChildren(content);
+  });
+}
+
+function syncMainPdfControls() {
+  const state = mainPdfState;
+  const hasPdf = Boolean(state && state.pageCount);
+  const step = state?.pageMode === 'double' ? 2 : 1;
+
+  if (mainPdfPageInput) {
+    mainPdfPageInput.value = state?.currentPage || 1;
+    mainPdfPageInput.max = state?.pageCount || 1;
+    mainPdfPageInput.disabled = !hasPdf;
+  }
+  if (mainPdfPageCount) {
+    mainPdfPageCount.textContent = state?.pageCount || '--';
+  }
+  if (mainPdfZoomLabel) {
+    mainPdfZoomLabel.textContent = `${Math.round((state?.zoom || 1) * 100)}%`;
+  }
+  if (mainPdfSpread) {
+    mainPdfSpread.style.setProperty('--main-pdf-page-zoom', state?.zoom || 1);
+  }
+  if (mainPdfViewer) {
+    mainPdfViewer.classList.toggle('single-page-mode', state?.pageMode === 'single');
+    const prevBtn = mainPdfViewer.querySelector('[data-main-pdf-action="prev"]');
+    const nextBtn = mainPdfViewer.querySelector('[data-main-pdf-action="next"]');
+    const zoomOutBtn = mainPdfViewer.querySelector('[data-main-pdf-action="zoom-out"]');
+    const zoomInBtn = mainPdfViewer.querySelector('[data-main-pdf-action="zoom-in"]');
+    const openBtn = mainPdfViewer.querySelector('[data-main-pdf-action="open-file"]');
+    const modeBtn = mainPdfViewer.querySelector('[data-main-pdf-action="toggle-page-mode"]');
+    const fullscreenBtn = mainPdfViewer.querySelector('[data-main-pdf-action="toggle-fullscreen"]');
+
+    if (prevBtn) prevBtn.disabled = !hasPdf || state.currentPage <= 1;
+    if (nextBtn) nextBtn.disabled = !hasPdf || state.currentPage + step > state.pageCount;
+    if (zoomOutBtn) zoomOutBtn.disabled = !hasPdf;
+    if (zoomInBtn) zoomInBtn.disabled = !hasPdf;
+    if (openBtn) openBtn.disabled = !state?.pdfPath;
+    if (fullscreenBtn) fullscreenBtn.disabled = !hasPdf;
+    if (modeBtn) {
+      modeBtn.disabled = !hasPdf;
+      modeBtn.textContent = state?.pageMode === 'single' ? '单页' : '双页';
+      modeBtn.title = state?.pageMode === 'single'
+        ? '当前单页展示，点击切换为双页'
+        : '当前双页展示，点击切换为单页';
+    }
+    syncMainPdfFullscreenButton();
+  }
+}
+
+function parseCssPx(value) {
+  const parsed = parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function applyMainPdfAutoFit() {
+  const state = mainPdfState;
+  if (!state || !mainPdfSpread) {
+    syncMainPdfControls();
+    return;
+  }
+  if (state.manualZoom) {
+    syncMainPdfControls();
+    return;
+  }
+
+  const pageSlots = state.pageMode === 'double' ? 2 : 1;
+  const spreadStyle = window.getComputedStyle(mainPdfSpread);
+  const paddingX = parseCssPx(spreadStyle.paddingLeft) + parseCssPx(spreadStyle.paddingRight);
+  const paddingY = parseCssPx(spreadStyle.paddingTop) + parseCssPx(spreadStyle.paddingBottom);
+  const gap = state.pageMode === 'double' ? parseCssPx(spreadStyle.columnGap || spreadStyle.gap || '0') : 0;
+  const pageNumberReserve = 28;
+  const availableWidth = Math.max(120, mainPdfSpread.clientWidth - paddingX - gap);
+  const availableHeight = Math.max(160, mainPdfSpread.clientHeight - paddingY - pageNumberReserve);
+  const widthZoom = availableWidth / (state.basePageWidth * pageSlots);
+  const heightZoom = availableHeight / (state.basePageWidth * state.pageAspectRatio);
+  state.zoom = Math.min(2.4, Math.max(0.2, Math.min(widthZoom, heightZoom)));
+  syncMainPdfControls();
+}
+
+function updateMainPdfStatus(pages) {
+  const state = mainPdfState;
+  if (!state || !mainPdfStatus) return;
+  const modeText = state.pageMode === 'double' ? '双页阅读' : '单页阅读';
+  if (!state.pageCount) {
+    mainPdfStatus.textContent = '正在读取 PDF...';
+    return;
+  }
+  mainPdfStatus.textContent = pages && pages[1]
+    ? `${pages[0]}-${pages[1]} / ${state.pageCount} 页 · ${modeText}`
+    : `${state.currentPage} / ${state.pageCount} 页 · ${modeText}`;
+}
+
+function showMainPdfPageNotice(slot, message, type = 'info') {
+  const oldNotice = slot.querySelector('.main-pdf-page-notice');
+  if (oldNotice) oldNotice.remove();
+
+  const notice = document.createElement('div');
+  notice.className = `main-pdf-page-notice ${type}`;
+  notice.textContent = message;
+  slot.appendChild(notice);
+  setTimeout(() => {
+    if (notice.parentNode === slot) notice.remove();
+  }, 2400);
+}
+
+function showMainPdfSlotMessage(slot, message, className = 'main-pdf-page-error') {
+  if (!slot) return;
+  const content = document.createElement('div');
+  content.className = className;
+  content.textContent = message;
+  slot.replaceChildren(content);
+}
+
+function goToMainPdfPage(page) {
+  const state = mainPdfState;
+  if (!state || !state.pageCount) return;
+  const targetPage = Math.min(state.pageCount, Math.max(1, parseInt(page, 10) || 1));
+  if (targetPage === state.currentPage) {
+    syncMainPdfControls();
+    return;
+  }
+  state.currentPage = targetPage;
+  renderMainPdfSpread();
+}
+
+function turnMainPdfPage(direction) {
+  const state = mainPdfState;
+  if (!state || !state.pageCount) return;
+  const step = state.pageMode === 'double' ? 2 : 1;
+  const targetPage = direction === 'prev'
+    ? state.currentPage - step
+    : state.currentPage + step;
+  goToMainPdfPage(targetPage);
+}
+
+function handleMainPdfAction(action) {
+  const state = mainPdfState;
+  if (action === 'open-file') {
+    if (state?.pdfPath) ipcRenderer.invoke('open-path', state.pdfPath);
+    return;
+  }
+  if (action === 'toggle-fullscreen') {
+    if (state?.pageCount) toggleMainPdfFullscreen();
+    return;
+  }
+  if (!state || !state.pageCount) return;
+
+  switch (action) {
+    case 'prev':
+      turnMainPdfPage('prev');
+      break;
+    case 'next':
+      turnMainPdfPage('next');
+      break;
+    case 'zoom-out':
+      state.manualZoom = true;
+      state.zoom = Math.max(0.25, Math.round((state.zoom - 0.1) * 10) / 10);
+      syncMainPdfControls();
+      if (mainPdfStatus) mainPdfStatus.textContent = `${Math.round(state.zoom * 100)}% · 手动缩放`;
+      break;
+    case 'zoom-in':
+      state.manualZoom = true;
+      state.zoom = Math.min(2.4, Math.round((state.zoom + 0.1) * 10) / 10);
+      syncMainPdfControls();
+      if (mainPdfStatus) mainPdfStatus.textContent = `${Math.round(state.zoom * 100)}% · 手动缩放`;
+      break;
+    case 'toggle-page-mode':
+      state.pageMode = state.pageMode === 'double' ? 'single' : 'double';
+      saveStoredMainPdfPageMode(state.pageMode);
+      if (!state.manualZoom) {
+        applyMainPdfAutoFit();
+      } else {
+        syncMainPdfControls();
+      }
+      renderMainPdfSpread();
+      break;
+  }
+}
+
+async function openImageInMainViewer(filePath) {
+  const token = ++mainViewerToken;
+  ensurePlayerContainerVisible();
+  if (currentViewerMode === 'video') savePlaybackProgress();
+  setMainViewerMode('image');
+  resetVideoControlsForDocumentMode();
+  disconnectMainPdfResizeObserver();
+  mainPdfState = null;
+  currentFilePath = filePath;
+  highlightActiveFileDOM(filePath);
+  resetMainImageFit();
+  saveMediaTreeState({ lastMediaFile: filePath, lastMediaKind: 'image' });
+
+  const imageUrl = `http://localhost:30032/screenshot?path=${encodeURIComponent(filePath)}`;
+  const baseName = path.basename(filePath);
+  if (mainImageTitle) mainImageTitle.textContent = baseName;
+  if (mainImageStatus) mainImageStatus.textContent = '正在加载图片...';
+  if (mainImagePreview) mainImagePreview.removeAttribute('src');
+  showLoading('正在加载图片...');
+
+  try {
+    await preloadMainImage(imageUrl, baseName);
+    if (token !== mainViewerToken || currentViewerMode !== 'image') return;
+    mainImagePreview.src = imageUrl;
+    mainImagePreview.alt = baseName;
+    if (mainImageStatus) mainImageStatus.textContent = '适合窗口显示';
+  } catch (err) {
+    if (token !== mainViewerToken || currentViewerMode !== 'image') return;
+    if (mainImageStatus) mainImageStatus.textContent = `图片打开失败：${err.message}`;
+    if (mainImagePreview) mainImagePreview.removeAttribute('src');
+  } finally {
+    if (token === mainViewerToken) hideLoading();
+  }
+}
+
+async function openPdfInMainViewer(filePath) {
+  const token = ++mainViewerToken;
+  ensurePlayerContainerVisible();
+  if (currentViewerMode === 'video') savePlaybackProgress();
+  setMainViewerMode('pdf');
+  resetVideoControlsForDocumentMode();
+  disconnectMainPdfResizeObserver();
+  currentFilePath = filePath;
+  highlightActiveFileDOM(filePath);
+  saveMediaTreeState({ lastMediaFile: filePath, lastMediaKind: 'pdf' });
+
+  const baseName = path.basename(filePath);
+  if (mainPdfTitle) mainPdfTitle.textContent = baseName;
+  if (mainPdfStatus) mainPdfStatus.textContent = '正在读取 PDF...';
+
+  mainPdfState = {
+    pdfPath: filePath,
+    title: baseName,
+    pageCount: 0,
+    currentPage: 1,
+    zoom: 1,
+    manualZoom: false,
+    pageMode: getStoredMainPdfPageMode(),
+    renderScale: 2,
+    renderToken: 0,
+    basePageWidth: 430,
+    pageAspectRatio: 1.294,
+    lastRenderedPage: 1,
+    hasRenderedSpread: false,
+    turnDirection: 'forward'
+  };
+
+  resetMainPdfSlots('正在读取 PDF...', 'main-viewer-loading');
+  syncMainPdfControls();
+  showLoading('正在读取 PDF...');
+
+  try {
+    const info = await ipcRenderer.invoke('pdf-get-info', filePath);
+    if (token !== mainViewerToken || currentViewerMode !== 'pdf') return;
+    if (!info || !info.success) {
+      throw new Error(info?.error || 'PDF 信息读取失败');
+    }
+
+    mainPdfState.pageCount = info.pageCount || 0;
+    if (mainPdfState.pageCount <= 0) {
+      throw new Error('PDF 没有可渲染页面');
+    }
+    applyMainPdfAutoFit();
+
+    if (typeof ResizeObserver !== 'undefined' && mainPdfSpread) {
+      mainPdfResizeObserver = new ResizeObserver(() => {
+        if (mainPdfState && currentViewerMode === 'pdf' && !mainPdfState.manualZoom) {
+          applyMainPdfAutoFit();
+        }
+      });
+      mainPdfResizeObserver.observe(mainPdfSpread);
+    }
+
+    await renderMainPdfSpread();
+  } catch (err) {
+    if (token !== mainViewerToken || currentViewerMode !== 'pdf') return;
+    console.error('Main PDF reader init failed:', err);
+    if (mainPdfStatus) mainPdfStatus.textContent = `PDF 打开失败：${err.message}`;
+    resetMainPdfSlots(`PDF 打开失败：${err.message}`, 'main-viewer-error');
+  } finally {
+    if (token === mainViewerToken) hideLoading();
+  }
+}
+
+async function renderMainPdfSpread() {
+  const state = mainPdfState;
+  if (!state || !mainPdfViewer || !mainPdfSpread) return;
+
+  const token = ++state.renderToken;
+  const isInitialRender = !state.hasRenderedSpread;
+  const leftSlot = mainPdfSpread.querySelector('[data-role="main-left-page"]');
+  const rightSlot = mainPdfSpread.querySelector('[data-role="main-right-page"]');
+  const pages = [
+    state.currentPage,
+    state.pageMode === 'double' && state.currentPage + 1 <= state.pageCount ? state.currentPage + 1 : null
+  ];
+
+  const previousPage = state.lastRenderedPage || state.currentPage;
+  state.turnDirection = state.currentPage >= previousPage ? 'forward' : 'backward';
+
+  syncMainPdfControls();
+  updateMainPdfStatus(pages);
+
+  await Promise.all([
+    renderMainPdfPageIntoSlot(leftSlot, state, pages[0], token),
+    renderMainPdfPageIntoSlot(rightSlot, state, pages[1], token)
+  ]);
+
+  if (token === state.renderToken && mainPdfState === state && currentViewerMode === 'pdf' && isInitialRender && !state.manualZoom) {
+    applyMainPdfAutoFit();
+  }
+
+  if (token === state.renderToken && mainPdfState === state && currentViewerMode === 'pdf') {
+    state.lastRenderedPage = state.currentPage;
+    state.hasRenderedSpread = true;
+    updateMainPdfStatus(pages);
+  }
+}
+
+async function renderMainPdfPageIntoSlot(slot, state, pageNumber, token) {
+  if (!slot) return;
+
+  if (!pageNumber) {
+    slot.classList.add('empty');
+    slot.classList.remove('is-rendering-next', 'page-turn-forward', 'page-turn-backward');
+    delete slot.dataset.pageNumber;
+    showMainPdfSlotMessage(slot, '本书已到末页', 'main-pdf-page-empty');
+    return;
+  }
+
+  if (slot.dataset.pageNumber === String(pageNumber) && slot.querySelector('img')) {
+    slot.classList.remove('empty', 'is-rendering-next');
+    return;
+  }
+
+  slot.classList.remove('empty');
+  const hasRenderedPage = Boolean(slot.querySelector('img'));
+  if (hasRenderedPage) {
+    slot.classList.add('is-rendering-next');
+  } else {
+    showMainPdfSlotMessage(slot, `正在渲染第 ${pageNumber} 页...`, 'main-viewer-loading');
+  }
+
+  let result = null;
+  try {
+    result = await ipcRenderer.invoke('pdf-render-page', {
+      pdfPath: state.pdfPath,
+      pageIndex: pageNumber - 1,
+      scale: state.renderScale
+    });
+  } catch (err) {
+    result = { success: false, error: err.message };
+  }
+
+  if (token !== state.renderToken || mainPdfState !== state || currentViewerMode !== 'pdf') return;
+  slot.classList.remove('is-rendering-next');
+
+  if (!result || !result.success) {
+    const message = `第 ${pageNumber} 页渲染失败：${result?.error || '未知错误'}`;
+    if (hasRenderedPage) {
+      showMainPdfPageNotice(slot, message, 'error');
+    } else {
+      showMainPdfSlotMessage(slot, message, 'main-pdf-page-error');
+    }
+    return;
+  }
+
+  const imageUrl = `http://localhost:30032/screenshot?path=${encodeURIComponent(result.absolutePath)}`;
+  let img = null;
+  try {
+    img = await preloadMainImage(imageUrl, `PDF 第 ${pageNumber} 页`);
+  } catch (err) {
+    if (token !== state.renderToken || mainPdfState !== state || currentViewerMode !== 'pdf') return;
+    const message = `第 ${pageNumber} 页加载失败：${err.message}`;
+    if (hasRenderedPage) {
+      showMainPdfPageNotice(slot, message, 'error');
+    } else {
+      showMainPdfSlotMessage(slot, message, 'main-pdf-page-error');
+    }
+    return;
+  }
+
+  if (token !== state.renderToken || mainPdfState !== state || currentViewerMode !== 'pdf') return;
+
+  if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+    state.pageAspectRatio = img.naturalHeight / img.naturalWidth;
+  }
+
+  const pageContent = document.createElement('div');
+  pageContent.className = 'main-pdf-page-content';
+  const pageNumberEl = document.createElement('div');
+  pageNumberEl.className = 'main-pdf-page-number';
+  pageNumberEl.textContent = `第 ${pageNumber} 页`;
+
+  pageContent.appendChild(img);
+  pageContent.appendChild(pageNumberEl);
+
+  const turnClass = state.turnDirection === 'backward' ? 'page-turn-backward' : 'page-turn-forward';
+  slot.classList.remove('page-turn-forward', 'page-turn-backward');
+  if (hasRenderedPage) slot.classList.add(turnClass);
+  slot.dataset.pageNumber = String(pageNumber);
+  slot.replaceChildren(pageContent);
+
+  if (hasRenderedPage) {
+    setTimeout(() => {
+      slot.classList.remove('page-turn-forward', 'page-turn-backward');
+    }, 320);
+  }
+}
+
+function prepareMainVideoMode(nextFilePath) {
+  ensurePlayerContainerVisible();
+  if (currentViewerMode === 'video' && currentFilePath && currentFilePath !== nextFilePath) {
+    savePlaybackProgress();
+  }
+  ++mainViewerToken;
+  disconnectMainPdfResizeObserver();
+  mainPdfState = null;
+  if (mainImagePreview) mainImagePreview.removeAttribute('src');
+  if (currentViewerMode !== 'video') {
+    currentFilePath = '';
+    currentFileDuration = 0;
+  }
+  setMainViewerMode('video');
+}
+
 async function playVideo(filePath, startSec = 0, autoplay = true) {
+  prepareMainVideoMode(filePath);
+
   // If playing a direct HTTP/HTTPS URL
   if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
     const downloaderView = document.getElementById('downloader-view');
@@ -1170,6 +1910,7 @@ async function playVideo(filePath, startSec = 0, autoplay = true) {
     currentFileDuration = 0; // Will be resolved by video element metadata
     isTranscoding = false;
     transcodeStartTime = startSec;
+    saveMediaTreeState({ lastMediaFile: filePath, lastMediaKind: 'video' });
 
     // UI Updates
     videoTitle.textContent = filePath.substring(filePath.lastIndexOf('/') + 1) || '网络流媒体';
@@ -1253,6 +1994,7 @@ async function playVideo(filePath, startSec = 0, autoplay = true) {
 
     // Highlighting in Tree
     highlightActiveFileDOM(filePath);
+    saveMediaTreeState({ lastMediaFile: filePath, lastMediaKind: 'video' });
 
     // Build Streaming URL
     let streamUrl = '';
@@ -1286,6 +2028,7 @@ async function playVideo(filePath, startSec = 0, autoplay = true) {
 
 // Video Callbacks
 function onVideoLoadedMetadata() {
+  if (currentViewerMode !== 'video') return;
   hideLoading();
 
   // Apply default or current playback speed to the video
@@ -1304,6 +2047,7 @@ function onVideoLoadedMetadata() {
 }
 
 function onVideoPlay() {
+  if (currentViewerMode !== 'video') return;
   iconPlay.classList.add('hidden');
   iconPause.classList.remove('hidden');
   startHistorySaveTimer();
@@ -1311,6 +2055,7 @@ function onVideoPlay() {
 }
 
 function onVideoPause() {
+  if (currentViewerMode !== 'video') return;
   iconPlay.classList.remove('hidden');
   iconPause.classList.add('hidden');
   stopHistorySaveTimer();
@@ -1326,6 +2071,7 @@ function onVideoPause() {
 }
 
 function onVideoEnded() {
+  if (currentViewerMode !== 'video') return;
   if (!currentFilePath) return;
   
   // 播放结束，强制写入 100% 进度
@@ -1358,7 +2104,9 @@ function onVideoEnded() {
 function flattenTreeFiles(node, list = []) {
   if (!node) return list;
   if (node.type === 'file') {
-    list.push(node.path);
+    if (getMediaKind(node.path, node.mediaKind) === 'video') {
+      list.push(node.path);
+    }
   } else if (node.type === 'directory' && node.children) {
     node.children.forEach(child => flattenTreeFiles(child, list));
   }
@@ -1366,6 +2114,7 @@ function flattenTreeFiles(node, list = []) {
 }
 
 function onVideoTimeUpdate() {
+  if (currentViewerMode !== 'video') return;
   if (isTimelineDragging) return;
 
   const currentSec = isTranscoding 
@@ -1386,6 +2135,7 @@ function onVideoTimeUpdate() {
 }
 
 function onVideoProgress() {
+  if (currentViewerMode !== 'video') return;
   if (videoElement.buffered.length > 0 && currentFileDuration > 0) {
     const bufferedEnd = videoElement.buffered.end(videoElement.buffered.length - 1);
     
@@ -1405,6 +2155,7 @@ function onVideoProgress() {
 // Scrubber seeks (Timeline dragging)
 // -------------------------------------------------------------
 function onTimelineInput() {
+  if (currentViewerMode !== 'video') return;
   isTimelineDragging = true;
   const percent = parseFloat(timelineSlider.value);
   timelineProgress.style.width = `${percent}%`;
@@ -1414,6 +2165,7 @@ function onTimelineInput() {
 }
 
 function onTimelineChange() {
+  if (currentViewerMode !== 'video') return;
   isTimelineDragging = false;
   if (!currentFilePath) return;
 
@@ -1424,6 +2176,7 @@ function onTimelineChange() {
 }
 
 function seekTo(targetTime) {
+  if (currentViewerMode !== 'video') return;
   if (isTranscoding) {
     // For transcode streams, seek requires restarting the ffmpeg stream at target time
     const isPlaying = !videoElement.paused;
@@ -1435,6 +2188,7 @@ function seekTo(targetTime) {
 }
 
 function seekRelative(seconds) {
+  if (currentViewerMode !== 'video') return;
   if (!currentFilePath) return;
 
   const currentSec = isTranscoding 
@@ -1529,9 +2283,17 @@ function toggleFullscreen() {
 
 // Fullscreen escape key change listener
 document.addEventListener('fullscreenchange', () => {
-  if (!document.fullscreenElement) {
-    iconFullscreenEnter.classList.remove('hidden');
-    iconFullscreenExit.classList.add('hidden');
+  const isFullscreen = Boolean(document.fullscreenElement);
+  iconFullscreenEnter.classList.toggle('hidden', isFullscreen);
+  iconFullscreenExit.classList.toggle('hidden', !isFullscreen);
+
+  syncMainPdfFullscreenButton();
+  if (currentViewerMode === 'pdf' && mainPdfState && !mainPdfState.manualZoom) {
+    requestAnimationFrame(() => {
+      if (currentViewerMode === 'pdf' && mainPdfState && !mainPdfState.manualZoom) {
+        applyMainPdfAutoFit();
+      }
+    });
   }
 });
 
@@ -1566,6 +2328,12 @@ function handleKeyboardShortcuts(e) {
     }
   }
 
+  if (currentViewerMode === 'pdf' && e.code === 'Escape' && isMainPdfFullscreen()) {
+    e.preventDefault();
+    toggleMainPdfFullscreen();
+    return;
+  }
+
   // If user is focused on any input or textarea, ignore hotkeys
   if (document.activeElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
     return;
@@ -1578,6 +2346,20 @@ function handleKeyboardShortcuts(e) {
     const btn = activePdfReader.querySelector(`[data-action="${action}"]`);
     if (btn && !btn.disabled) {
       btn.click();
+    }
+    return;
+  }
+
+  if (currentViewerMode === 'pdf' && ['ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
+    e.preventDefault();
+    turnMainPdfPage(e.code === 'ArrowLeft' ? 'prev' : 'next');
+    return;
+  }
+
+  if (currentViewerMode !== 'video') {
+    if (e.code === 'KeyF') {
+      e.preventDefault();
+      toggleFullscreen();
     }
     return;
   }
@@ -1622,6 +2404,7 @@ function handleKeyboardShortcuts(e) {
 }
 
 function togglePlayPause() {
+  if (currentViewerMode !== 'video') return;
   if (!currentFilePath) return;
 
   if (videoElement.paused) {
@@ -1635,6 +2418,7 @@ function togglePlayPause() {
 // Interactive Controls Auto-hide Overlays
 // -------------------------------------------------------------
 function triggerControlsVisibility() {
+  if (currentViewerMode !== 'video') return;
   showControls();
   
   if (controlsTimeout) {
@@ -1659,6 +2443,7 @@ function triggerControlsVisibility() {
 }
 
 function showControls() {
+  if (currentViewerMode !== 'video') return;
   controlsOverlay.classList.remove('hidden');
   playerContainer.style.cursor = 'default';
 }
@@ -3143,6 +3928,10 @@ function initOnlineCommunity() {
 
 // Capture Video Frame function
 async function captureVideoFrame() {
+  if (currentViewerMode !== 'video') {
+    alert('当前没有播放视频，无法截屏！');
+    return;
+  }
   if (!videoElement || videoElement.readyState < 2 || !currentFilePath) {
     alert('当前没有播放视频，无法截屏！');
     return;
